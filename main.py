@@ -12,6 +12,8 @@ def main(page: Page):
         bgcolor=colors.with_opacity(0.1, ft.cupertino_colors.SYSTEM_BACKGROUND),
     )
 
+    dlg_modal = None
+
     page.navigation_bar = ft.NavigationBar(
         destinations=[
             ft.NavigationDestination(icon=ft.icons.CALENDAR_MONTH_OUTLINED, label="Calendario"),
@@ -28,22 +30,23 @@ def main(page: Page):
         bgcolor = '#1EF50A',
         on_change=print("hola")
         #overlay_color ="#1EF50A2",
-    )
-    
+    )    
 
     def close_dlg(e):
-        dlg_modal.open = False
-        page.update()
+        if dlg_modal is not None:
+            dlg_modal.open = False
+            page.update()
 
     def open_dlg_modal(e):
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
 
-    def solicitudMesa():
-        return ft.AlertDialog(
+    def solicitudMesa(button_id):
+        nonlocal dlg_modal
+        dlg_modal = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Para apartar"),
+            title=ft.Text(f"Desbloquear {button_id}"),
             content=ft.Text("¿Confirmar acción?"),
             actions=[
                 ft.TextButton("Sí", on_click=close_dlg),
@@ -52,11 +55,11 @@ def main(page: Page):
             actions_alignment=ft.MainAxisAlignment.END,
             on_dismiss=lambda e: print("Modal dialog dismissed!"),
         )
-
-    dlg_modal = solicitudMesa()
+        return dlg_modal    
 
     def handle_button_click(e, button_id):
         print(f"Button {button_id} was pressed")
+        dlg_modal = solicitudMesa(button_id)
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
