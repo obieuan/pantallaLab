@@ -7,6 +7,7 @@ def main(page: Page):
     page.window_width = 1024
     page.window_height = 600
     page.window_resizable = False
+    page.window_full_screen = False
     page.appbar = ft.AppBar(
         title=ft.Text("Mesas de trabajo"),
         bgcolor=colors.with_opacity(0.1, ft.cupertino_colors.SYSTEM_BACKGROUND),
@@ -32,6 +33,9 @@ def main(page: Page):
         #overlay_color ="#1EF50A2",
     )
 
+    def consultar_id():
+        pass
+
     def close_dlg(e):
         if dlg_modal is not None:
             dlg_modal.open = False
@@ -54,7 +58,7 @@ def main(page: Page):
                     icon_color=ft.colors.GREEN_400,
                     icon_size=50,
                     tooltip="Aceptar",
-                    on_click=close_dlg),
+                    on_click=consultar_id),
                 ft.IconButton(icon=ft.icons.CANCEL,
                     icon_color=ft.colors.RED_400,
                     icon_size=50,
@@ -62,7 +66,7 @@ def main(page: Page):
                     on_click=close_dlg)
             ],
             actions_alignment=ft.MainAxisAlignment.CENTER,
-            on_dismiss=lambda e: print("Modal dialog dismissed!"),
+            on_dismiss=lambda e: print("Acción cancelada"),
         )
         return dlg_modal
 
