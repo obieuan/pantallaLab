@@ -1,5 +1,7 @@
 import flet as ft
 from flet import Column, Container, Page, Row, Text, colors, icons
+from raspberrypi4.lector import lecturaDeTarjeta
+
 
 def main(page: Page):
     page.adaptive = True
@@ -33,7 +35,8 @@ def main(page: Page):
         #overlay_color ="#1EF50A2",
     )
 
-    def consultar_id():
+    def consultar_id(e):
+        print(lecturaDeTarjeta())
         pass
 
     def close_dlg(e):
