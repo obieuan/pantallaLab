@@ -1,6 +1,7 @@
 import flet as ft
 from flet import Column, Container, Page, Row, Text, colors, icons
-from raspberrypi4.lector import lecturaDeTarjeta
+#from raspberrypi4.lector import lecturaDeTarjeta
+import threading
 
 
 def main(page: Page):
@@ -35,9 +36,12 @@ def main(page: Page):
         #overlay_color ="#1EF50A2",
     )
 
-    def consultar_id(e):
-        print(lecturaDeTarjeta())
-        pass
+    def consultar_id(button_id):
+        # Cierra el diálogo actual
+        close_dlg(None)
+        
+        solicitarEscanear(button_id)        
+        print("Button ID:", button_id)
 
     def close_dlg(e):
         if dlg_modal is not None:
@@ -61,7 +65,7 @@ def main(page: Page):
                     icon_color=ft.colors.GREEN_400,
                     icon_size=50,
                     tooltip="Aceptar",
-                    on_click=consultar_id),
+                    on_click=lambda e: consultar_id(button_id)),
                 ft.IconButton(icon=ft.icons.CANCEL,
                     icon_color=ft.colors.RED_400,
                     icon_size=50,
@@ -72,6 +76,47 @@ def main(page: Page):
             on_dismiss=lambda e: print("Acción cancelada"),
         )
         return dlg_modal
+    
+    def solicitarEscanear(button_id):
+        nonlocal dlg_modal
+        dlg_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Por favor acerque su credencial al lector", size=25, text_align=ft.TextAlign.CENTER),
+            icon=ft.Icon(name=ft.icons.SIGNAL_WIFI_4_BAR, color=ft.colors.GREEN_400, size=40),
+            content=ft.Text("Esperando lectura...", size=25, text_align=ft.TextAlign.CENTER),
+            actions=[
+                ft.IconButton(icon=ft.icons.CANCEL,
+                            icon_color=ft.colors.RED_400,
+                            icon_size=50,
+                            tooltip="Cancelar",
+                            on_click=close_dlg)
+            ],
+            actions_alignment=ft.MainAxisAlignment.CENTER,
+            on_dismiss=lambda e: print("Acción cancelada"),
+        )
+        page.dialog = dlg_modal
+        dlg_modal.open = True
+        page.update()
+        # Inicia el temporizador para la lectura del RFID
+        threading.Timer(10, check_rfid_response, args=[button_id]).start()
+    
+    def check_rfid_response():
+        try:
+            # Intenta leer el RFID
+            rfid_data = lecturaDeTarjeta()  # Descomentar en la rasp
+            #rfid_data = 151515  # Descomentar en la rasp
+            if rfid_data:
+                page.dialog.content = ft.Text(f"Dato RFID: {rfid_data}", size=25, text_align=ft.TextAlign.CENTER)
+            else:
+                raise ValueError("No se recibió dato")
+        except Exception as e:
+            page.dialog.content = ft.Text("Tiempo de espera agotado para esta solicitud", size=25, text_align=ft.TextAlign.CENTER)
+            threading.Timer(3, close_dlg).start()  # Cerrar después de 3 segundos
+        finally:
+            page.update()
+
+    # Inicia el temporizador para la lectura del RFID
+    threading.Timer(10, check_rfid_response).start()
 
     def handle_button_click(e, button_id):
         print(f"Button {button_id} was pressed")

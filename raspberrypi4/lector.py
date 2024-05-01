@@ -1,4 +1,5 @@
-import RPi.GPIO as GPIOfrom mfrc522 import SimpleMFRC522
+import RPi.GPIO as GPIO
+from mfrc522 import SimpleMFRC522
 
 def lecturaDeTarjeta():
 
@@ -9,4 +10,4 @@ def lecturaDeTarjeta():
         print(text)
     finally:    
         GPIO.cleanup()
-return text
+    return text
