@@ -1,6 +1,6 @@
 import flet as ft
 from flet import Column, Container, Page, Row, Text, colors, icons
-#from raspberrypi4.lector import lecturaDeTarjeta
+from raspberrypi4.lector import lecturaDeTarjeta
 import threading
 
 
@@ -38,12 +38,12 @@ def main(page: Page):
 
     def consultar_id(button_id):
         # Cierra el diálogo actual
-        close_dlg(None)
+        close_dlg()
         
         solicitarEscanear(button_id)        
-        print("Button ID:", button_id)
+        #print("Button ID:", button_id)
 
-    def close_dlg(e):
+    def close_dlg(e=None):
         if dlg_modal is not None:
             dlg_modal.open = False
             page.update()
@@ -97,26 +97,23 @@ def main(page: Page):
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
-        # Inicia el temporizador para la lectura del RFID
         threading.Timer(10, check_rfid_response, args=[button_id]).start()
     
-    def check_rfid_response():
+    def check_rfid_response(button_id):
         try:
             # Intenta leer el RFID
             rfid_data = lecturaDeTarjeta()  # Descomentar en la rasp
             #rfid_data = 151515  # Descomentar en la rasp
             if rfid_data:
-                page.dialog.content = ft.Text(f"Dato RFID: {rfid_data}", size=25, text_align=ft.TextAlign.CENTER)
+                dlg_modal.content = ft.Text(f"Dato RFID: {rfid_data}", size=25, text_align=ft.TextAlign.CENTER)
             else:
                 raise ValueError("No se recibió dato")
         except Exception as e:
-            page.dialog.content = ft.Text("Tiempo de espera agotado para esta solicitud", size=25, text_align=ft.TextAlign.CENTER)
-            threading.Timer(3, close_dlg).start()  # Cerrar después de 3 segundos
+            dlg_modal.content = ft.Text("Tiempo de espera agotado para esta solicitud", size=25, text_align=ft.TextAlign.CENTER)
+            threading.Timer(2, close_dlg).start()  # Cerrar después de 3 segundos
         finally:
             page.update()
-
-    # Inicia el temporizador para la lectura del RFID
-    threading.Timer(10, check_rfid_response).start()
+    
 
     def handle_button_click(e, button_id):
         print(f"Button {button_id} was pressed")
