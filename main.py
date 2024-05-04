@@ -19,6 +19,7 @@ def main(page: Page):
     )
 
     dlg_modal = None
+    button_refs = {}
     try:
         with open('components/usuarios_activos.json', 'r') as archivo:
             usuarios_activos = json.load(archivo)
@@ -116,7 +117,7 @@ def main(page: Page):
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
-        threading.Timer(10, check_rfid_response, args=[button_id]).start()
+        threading.Timer(1, check_rfid_response, args=[button_id]).start()
     
     def check_rfid_response(button_id):
         rfid_data = 15136485
@@ -152,6 +153,17 @@ def main(page: Page):
                         dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
                         dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
                         guardar_usuario_activo(rfid_data)
+                        if button_id in button_refs:
+                            button_refs[button_id].bgcolor = '#7E0315'  # Cambia a rojo para mostrar ocupado
+                            new_content = ft.Column(
+                                [
+                                ft.Text(value=f"Mesa {button_id}", size=15, color=ft.colors.WHITE),
+                                ft.Text(value=f"Ocupado", size=10, color=ft.colors.WHITE),
+                            ],
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            )
+                            button_refs[button_id].content = new_content
+                            page.update()                        
                     if response_data['Codigo:'] == '0':
                         print("denegado")
                         dlg_modal.title=ft.Text(f"Acceso denegado:", size=25, text_align=ft.TextAlign.CENTER)
@@ -164,8 +176,7 @@ def main(page: Page):
             dlg_modal.content = ft.Text(str(e), size=25, text_align=ft.TextAlign.CENTER)
         finally:
             page.update()
-            #if dlg_modal.content.ft.Text.startswith("Acceso autorizado"):
-                #threading.Timer(2, close_dlg).start()
+            threading.Timer(2, close_dlg).start()
     
 
     def handle_button_click(e, button_id):
@@ -176,24 +187,24 @@ def main(page: Page):
         page.update()
 
     def EspacioButton(button_id, texto, subtexto, on_click):
-        return ft.Container(
-            content=ft.Container(
-                content=ft.Column(
-                    [
-                        ft.Text(value=texto, size=15,color = ft.colors.WHITE),
-                        ft.Text(value=subtexto, color = ft.colors.WHITE),
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,                    
-                ),
-                alignment=ft.alignment.center,
-                bgcolor='#0A3C82',
-                height = 115,
-                width = 135,
-                border_radius=10,
-                ink=True,
-                on_click=lambda e: on_click(e, button_id),
+        btn = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text(value=texto, size=15, color=ft.colors.WHITE),
+                    ft.Text(value=subtexto, size=10, color=ft.colors.WHITE),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
             ),
-    )
+            alignment=ft.alignment.center,
+            bgcolor='#0A3C82',  # Color inicial
+            height=115,
+            width=135,
+            border_radius=10,
+            ink=True,
+            on_click=lambda e: on_click(e, button_id),
+        )
+        button_refs[button_id] = btn  # Guardar referencia
+        return btn
 
     def createRowOfButtons(buttons, start_id=1):
         return ft.Row(
