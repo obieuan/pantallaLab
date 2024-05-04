@@ -1,8 +1,10 @@
 import flet as ft
 from flet import Column, Container, Page, Row, Text, colors, icons
-from raspberrypi4.lector import lecturaDeTarjeta
+from components.secrets import TokenApi
+#from raspberrypi4.lector import lecturaDeTarjeta
 import threading
-
+import requests
+import json
 
 def main(page: Page):
     page.adaptive = True
@@ -17,6 +19,11 @@ def main(page: Page):
     )
 
     dlg_modal = None
+    try:
+        with open('components/usuarios_activos.json', 'r') as archivo:
+            usuarios_activos = json.load(archivo)
+    except FileNotFoundError:
+        usuarios_activos = []  # Inicializa la lista si el archivo no existe
 
     page.navigation_bar = ft.NavigationBar(
         destinations=[
@@ -36,12 +43,24 @@ def main(page: Page):
         #overlay_color ="#1EF50A2",
     )
 
+    def guardar_usuario_activo(rfid_data):
+        usuarios_activos.append(rfid_data)
+        with open('components/usuarios_activos.json', 'w') as archivo:
+            json.dump(usuarios_activos, archivo)
+
+    def eliminar_usuario_activo(matricula):
+        usuario_a_remover = matricula
+        if usuario_a_remover in usuarios_activos:
+            usuarios_activos.remove(usuario_a_remover)
+        with open('components/usuarios_activos.json', 'w') as archivo:
+            json.dump(usuarios_activos, archivo)
+
     def consultar_id(button_id):
         # Cierra el diálogo actual
         close_dlg()
         
         solicitarEscanear(button_id)        
-        #print("Button ID:", button_id)
+        print("Button ID:", button_id)
 
     def close_dlg(e=None):
         if dlg_modal is not None:
@@ -100,19 +119,53 @@ def main(page: Page):
         threading.Timer(10, check_rfid_response, args=[button_id]).start()
     
     def check_rfid_response(button_id):
+        rfid_data = 15136485
         try:
             # Intenta leer el RFID
-            rfid_data = lecturaDeTarjeta()  # Descomentar en la rasp
-            #rfid_data = 151515  # Descomentar en la rasp
+            #rfid_data = lecturaDeTarjeta()  # Simula la lectura del RFID
+            
+            print(usuarios_activos)
+            if rfid_data in usuarios_activos:
+                raise ValueError("Ya tienes una mesa activa")
+                dlg_modal.content = ft.Text("Ya tienes una mesa activa", size=25, text_align=ft.TextAlign.CENTER)
+                return
             if rfid_data:
-                dlg_modal.content = ft.Text(f"Dato RFID: {rfid_data}", size=25, text_align=ft.TextAlign.CENTER)
+                #print(rfid_data)
+                url = "http://localhost:8888/api/v1/consulta"
+                headers = {'Content-Type': 'application/json'}
+                payload = {
+                    "TokenApi": TokenApi,
+                    "TarjetaAlumno": rfid_data,
+                    "Comando": "Iniciar",
+                    "idEspacio": button_id
+                }
+                response = requests.post(url, json=payload, headers=headers)
+                
+                if response.status_code == 200:
+                    # Procesa la respuesta de la API
+                    response_data = response.json()
+                    print(response_data)
+                    
+                    if response_data['Codigo:'] == '1':
+                        # actualizo la interfaz dependiendo de la respuesta
+                        print("autorizado")
+                        dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
+                        dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
+                        guardar_usuario_activo(rfid_data)
+                    if response_data['Codigo:'] == '0':
+                        print("denegado")
+                        dlg_modal.title=ft.Text(f"Acceso denegado:", size=25, text_align=ft.TextAlign.CENTER)
+                        dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
+                else:
+                    dlg_modal.content = ft.Text("Error en la respuesta de la API", size=25, text_align=ft.TextAlign.CENTER)
             else:
-                raise ValueError("No se recibió dato")
+                raise ValueError("No se recibió dato de RFID")
         except Exception as e:
-            dlg_modal.content = ft.Text("Tiempo de espera agotado para esta solicitud", size=25, text_align=ft.TextAlign.CENTER)
-            threading.Timer(2, close_dlg).start()  # Cerrar después de 3 segundos
+            dlg_modal.content = ft.Text(str(e), size=25, text_align=ft.TextAlign.CENTER)
         finally:
             page.update()
+            #if dlg_modal.content.ft.Text.startswith("Acceso autorizado"):
+                #threading.Timer(2, close_dlg).start()
     
 
     def handle_button_click(e, button_id):
