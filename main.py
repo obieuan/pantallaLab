@@ -1,6 +1,6 @@
 import flet as ft
 from flet import Column, Container, Page, Row, Text, colors, icons
-from components.secrets import TokenApi
+from components.secrets import TokenApi, urlApi
 #from raspberrypi4.lector import lecturaDeTarjeta
 import threading
 import requests
@@ -20,16 +20,14 @@ def main(page: Page):
 
     dlg_modal = None
     button_refs = {}
-    try:
-        with open('components/usuarios_activos.json', 'r') as archivo:
-            usuarios_activos = json.load(archivo)
-    except FileNotFoundError:
-        usuarios_activos = []  # Inicializa la lista si el archivo no existe
+    button_id = None
+    color_ocupado = '#7E0315' #7E0315 = Rojo
+    color_disponible = '#0A3C82'    #0A3C82  = Azul
 
     page.navigation_bar = ft.NavigationBar(
         destinations=[
-            ft.NavigationDestination(icon=ft.icons.CALENDAR_MONTH_OUTLINED, label="Calendario"),
             ft.NavigationDestination(icon=ft.icons.TABLE_RESTAURANT, label="Espacios"),
+            ft.NavigationDestination(icon=ft.icons.CALENDAR_MONTH_OUTLINED, label="Calendario"),            
             ft.NavigationDestination(
                 icon=ft.icons.BOOKMARK_BORDER,
                 selected_icon=ft.icons.BOOKMARK,
@@ -43,6 +41,25 @@ def main(page: Page):
         on_change=print("hola")
         #overlay_color ="#1EF50A2",
     )
+
+    
+    print("Creando lista de usuarios vacía...")
+    # Crear lista vacía y sobrescribir el archivo existente
+    usuarios_activos = []
+    with open('components/usuarios_activos.json', 'w') as archivo:
+        json.dump(usuarios_activos, archivo)
+    print("Lista de usuarios reiniciada")
+
+
+    def estado_ocupado(button_id):
+        estado = ft.Column([ft.Text(value=f"Mesa {button_id}", size=15, color=ft.colors.WHITE),
+                                ft.Text(value=f"Ocupado", size=10, color=ft.colors.WHITE),],alignment=ft.MainAxisAlignment.CENTER,)
+        return estado
+
+    def estado_disponible(button_id):
+        estado = ft.Column([ft.Text(value=f"Mesa {button_id}", size=15, color=ft.colors.WHITE),
+                                ft.Text(value=f"Disponible", size=10, color=ft.colors.WHITE),],alignment=ft.MainAxisAlignment.CENTER,)
+        return estado
 
     def guardar_usuario_activo(rfid_data):
         usuarios_activos.append(rfid_data)
@@ -132,7 +149,7 @@ def main(page: Page):
                 return
             if rfid_data:
                 #print(rfid_data)
-                url = "http://localhost:8888/api/v1/consulta"
+                url = urlApi
                 headers = {'Content-Type': 'application/json'}
                 payload = {
                     "TokenApi": TokenApi,
@@ -154,15 +171,8 @@ def main(page: Page):
                         dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
                         guardar_usuario_activo(rfid_data)
                         if button_id in button_refs:
-                            button_refs[button_id].bgcolor = '#7E0315'  # Cambia a rojo para mostrar ocupado
-                            new_content = ft.Column(
-                                [
-                                ft.Text(value=f"Mesa {button_id}", size=15, color=ft.colors.WHITE),
-                                ft.Text(value=f"Ocupado", size=10, color=ft.colors.WHITE),
-                            ],
-                            alignment=ft.MainAxisAlignment.CENTER,
-                            )
-                            button_refs[button_id].content = new_content
+                            button_refs[button_id].bgcolor = '#7E0315'  # Cambia a rojo para mostrar ocupado                            
+                            button_refs[button_id].content = estado_ocupado(button_id)
                             page.update()                        
                     if response_data['Codigo:'] == '0':
                         print("denegado")
@@ -187,16 +197,37 @@ def main(page: Page):
         page.update()
 
     def EspacioButton(button_id, texto, subtexto, on_click):
+        button_id = button_id
+        url = urlApi
+        bgcolor = ''
+        headers = {'Content-Type': 'application/json'}
+        payload = {
+            "TokenApi": TokenApi,
+            "TarjetaAlumno": 1,
+            "Comando": "Informacion",
+            "idEspacio": button_id
+        }
+        response = requests.post(url, json=payload, headers=headers)
+
+        if response.status_code == 200:
+            # Procesa la respuesta de la API
+            response_data = response.json()
+            print(response_data)
+            
+            if response_data['Estado'] == 0:
+                bgcolor = color_disponible
+                estado = estado_disponible(button_id)
+            else:
+                bgcolor = color_ocupado
+                estado = estado_ocupado(button_id)
+            if response_data['user_id'] is not None:
+                guardar_usuario_activo(response_data['user_id'])
+
+
         btn = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Text(value=texto, size=15, color=ft.colors.WHITE),
-                    ft.Text(value=subtexto, size=10, color=ft.colors.WHITE),
-                ],
-                alignment=ft.MainAxisAlignment.CENTER,
-            ),
+            content=estado,
             alignment=ft.alignment.center,
-            bgcolor='#0A3C82',  # Color inicial
+            bgcolor=bgcolor,  # Color inicial
             height=115,
             width=135,
             border_radius=10,
@@ -215,6 +246,7 @@ def main(page: Page):
             alignment=ft.MainAxisAlignment.END
         )   
 
+    
     page.add(
         ft.SafeArea(
             ft.Row([
