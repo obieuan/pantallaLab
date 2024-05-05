@@ -1,6 +1,7 @@
 import flet as ft
 from flet import Column, Container, Page, Row, Text, colors, icons
 from components.secrets import TokenApi, urlApi
+from components.api import payloadsApi
 #from raspberrypi4.lector import lecturaDeTarjeta
 import threading
 import requests
@@ -13,10 +14,8 @@ def main(page: Page):
     page.window_height = 600
     page.window_resizable = False
     page.window_full_screen = False
-    page.appbar = ft.AppBar(
-        title=ft.Text("Mesas de trabajo"),
-        bgcolor=colors.with_opacity(0.1, ft.cupertino_colors.SYSTEM_BACKGROUND),
-    )
+    
+    
 
     dlg_modal = None
     button_refs = {}
@@ -24,6 +23,58 @@ def main(page: Page):
     color_ocupado = '#7E0315' #7E0315 = Rojo
     color_disponible = '#0A3C82'    #0A3C82  = Azul
 
+    page.splash = ft.Container(
+        content=ft.Column([
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Image(
+                            src=f"assets/logosup.png",
+                            width=500,
+                            height=150,
+                            fit=ft.ImageFit.CONTAIN,
+                            border_radius=ft.border_radius.all(10)
+                        ),
+                    ],
+                    alignment = ft.MainAxisAlignment.CENTER,
+                    spacing=20
+                )
+            ),
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.ProgressRing(width=50, height=50),
+                    ],
+                    alignment = ft.MainAxisAlignment.CENTER,
+                    spacing=20
+                )
+            ),
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Image(
+                            src=f"assets/logo_eium.png",
+                            width=150,
+                            height=150,
+                            fit=ft.ImageFit.CONTAIN,
+                            border_radius=ft.border_radius.all(10)
+                        ),
+                    ],
+                    alignment = ft.MainAxisAlignment.CENTER,
+                    spacing=20
+                )
+            ),
+
+        ],
+        alignment = ft.MainAxisAlignment.CENTER,),
+        alignment = ft.alignment.center
+    )
+    page.update()
+    
+    page.appbar = ft.AppBar(
+        title=ft.Text("Mesas de trabajo"),
+        bgcolor=colors.with_opacity(0.1, ft.cupertino_colors.SYSTEM_BACKGROUND),
+    )
     page.navigation_bar = ft.NavigationBar(
         destinations=[
             ft.NavigationDestination(icon=ft.icons.TABLE_RESTAURANT, label="Espacios"),
@@ -42,7 +93,6 @@ def main(page: Page):
         #overlay_color ="#1EF50A2",
     )
 
-    
     print("Creando lista de usuarios vacía...")
     # Crear lista vacía y sobrescribir el archivo existente
     usuarios_activos = []
@@ -143,45 +193,44 @@ def main(page: Page):
             #rfid_data = lecturaDeTarjeta()  # Simula la lectura del RFID
             
             print(usuarios_activos)
-            if rfid_data in usuarios_activos:
-                raise ValueError("Ya tienes una mesa activa")
-                dlg_modal.content = ft.Text("Ya tienes una mesa activa", size=25, text_align=ft.TextAlign.CENTER)
-                return
-            if rfid_data:
-                #print(rfid_data)
-                url = urlApi
-                headers = {'Content-Type': 'application/json'}
-                payload = {
-                    "TokenApi": TokenApi,
-                    "TarjetaAlumno": rfid_data,
-                    "Comando": "Iniciar",
-                    "idEspacio": button_id
-                }
-                response = requests.post(url, json=payload, headers=headers)
-                
-                if response.status_code == 200:
-                    # Procesa la respuesta de la API
-                    response_data = response.json()
-                    print(response_data)
+            dlg_modal.title=ft.Text(f"Leido", size=25, text_align=ft.TextAlign.CENTER)
+            dlg_modal.content = ft.Text(f"Consultando {str(rfid_data)}", size=25, text_align=ft.TextAlign.CENTER)
+            page.update()
+            response = requests.post(urlApi,json=payloadsApi.informacionUsuarioApi(TokenApi,rfid_data,button_id))
+            if response.status_code == 200:
+                response_data = response.json()
+                print(response_data)
+                if str(response_data['id']) in usuarios_activos:
+                    raise ValueError("Ya tienes una mesa activa")                    
+                    return
+                if rfid_data:
+                    #print(rfid_data)
+                    url = urlApi                
+                    response = requests.post(urlApi, json=payloadsApi.iniciarMesaApi(TokenApi,rfid_data,button_id), headers=payloadsApi.headers)
                     
-                    if response_data['Codigo:'] == '1':
-                        # actualizo la interfaz dependiendo de la respuesta
-                        print("autorizado")
-                        dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
-                        dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
-                        guardar_usuario_activo(rfid_data)
-                        if button_id in button_refs:
-                            button_refs[button_id].bgcolor = '#7E0315'  # Cambia a rojo para mostrar ocupado                            
-                            button_refs[button_id].content = estado_ocupado(button_id)
-                            page.update()                        
-                    if response_data['Codigo:'] == '0':
-                        print("denegado")
-                        dlg_modal.title=ft.Text(f"Acceso denegado:", size=25, text_align=ft.TextAlign.CENTER)
-                        dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
+                    if response.status_code == 200:
+                        # Procesa la respuesta de la API
+                        response_data = response.json()
+                        print(response_data)
+                        
+                        if response_data['Codigo:'] == '1':
+                            # actualizo la interfaz dependiendo de la respuesta
+                            print("autorizado")
+                            dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
+                            dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
+                            guardar_usuario_activo(rfid_data)
+                            if button_id in button_refs:
+                                button_refs[button_id].bgcolor = '#7E0315'  # Cambia a rojo para mostrar ocupado                            
+                                button_refs[button_id].content = estado_ocupado(button_id)
+                                page.update()                        
+                        if response_data['Codigo:'] == '0':
+                            print("denegado")
+                            dlg_modal.title=ft.Text(f"Acceso denegado:", size=25, text_align=ft.TextAlign.CENTER)
+                            dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
+                    else:
+                        dlg_modal.content = ft.Text("Error en la respuesta de la API", size=25, text_align=ft.TextAlign.CENTER)
                 else:
-                    dlg_modal.content = ft.Text("Error en la respuesta de la API", size=25, text_align=ft.TextAlign.CENTER)
-            else:
-                raise ValueError("No se recibió dato de RFID")
+                    raise ValueError("No se recibió dato de RFID")
         except Exception as e:
             dlg_modal.content = ft.Text(str(e), size=25, text_align=ft.TextAlign.CENTER)
         finally:
@@ -200,14 +249,7 @@ def main(page: Page):
         button_id = button_id
         url = urlApi
         bgcolor = ''
-        headers = {'Content-Type': 'application/json'}
-        payload = {
-            "TokenApi": TokenApi,
-            "TarjetaAlumno": 1,
-            "Comando": "Informacion",
-            "idEspacio": button_id
-        }
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(url, json=payloadsApi.informacionApi(TokenApi,button_id), headers=payloadsApi.headers)
 
         if response.status_code == 200:
             # Procesa la respuesta de la API
@@ -244,8 +286,11 @@ def main(page: Page):
                 for button_id, (text, status) in enumerate(buttons, start=start_id)
             ],
             alignment=ft.MainAxisAlignment.END
-        )   
+        )
 
+
+
+ 
     
     page.add(
         ft.SafeArea(
@@ -287,5 +332,7 @@ def main(page: Page):
             ]),
         )
     )
+    page.splash = None    
+    page.update()
 
 ft.app(target=main)
