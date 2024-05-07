@@ -242,16 +242,15 @@ def main(page: Page):
             if str(mesa['id']) == str(button_id):
                 return mesa['estado_mesa']
     
-    def comprobar_vinculacion_mesa(button_id, response_data, usuarios_activos, rfid_data, user_id):
+    def comprobar_vinculacion_mesa(button_id, response_data, rfid_data, user_id):
+        global usuarios_activos
+        cargar_usuarios_activos()
         print(user_id)        
+        encontrado = False
+
         for mesa in usuarios_activos:
-            print(mesa['id'])
-            print(str(button_id))
-            print(mesa['matricula'])
-            print(str(user_id))
             if str(mesa['id']) == str(button_id) and mesa['matricula'] == str(user_id):
-                print("si entra")
-                incidencia = 1
+                encontrado = True
                 response = requests.post(urlApi,json=payloadsApi.finalizarMesaApi(TokenApi,rfid_data, button_id))
                 if response.status_code == 200:
                     response_data = response.json()
@@ -264,11 +263,11 @@ def main(page: Page):
                             button_refs[button_id].bgcolor = color_disponible  # Cambia a azul                            
                             button_refs[button_id].content = estado_disponible(button_id)
                             page.update()
-                            return                        
-                    raise ValueError((f"{response_data['Mensaje']}"))                
-
-
-
+                        return                        
+                    raise ValueError((f"{response_data['Mensaje']}"))         
+        if not encontrado:
+            print("No te corresponde esa mesa") 
+            raise ValueError("No te corresponde esa mesa")
 
     def check_rfid_response(button_id,estadoMesa):
         rfid_data = 15136485
@@ -287,7 +286,7 @@ def main(page: Page):
                 user_id = str(response_data['id']) 
                 print(response_data)
                 if estadoMesa is not None:                    
-                    comprobar_vinculacion_mesa(button_id, response_data, usuarios_activos, rfid_data, user_id) #reviso si es dueño de la mesa                
+                    comprobar_vinculacion_mesa(button_id, response_data, rfid_data, user_id) #reviso si es dueño de la mesa                
                     return
                 comprobar_usuario_activo(user_id)  #reviso si ya tiene mesa activa                
                 if rfid_data:
