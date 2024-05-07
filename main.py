@@ -95,6 +95,7 @@ def main(page: Page):
 
     print("Creando lista de usuarios vacía...")
     # Crear lista vacía y sobrescribir el archivo existente
+    global usuarios_activos
     usuarios_activos = []
     with open('components/usuarios_activos.json', 'w') as archivo:
         json.dump(usuarios_activos, archivo)
@@ -120,6 +121,7 @@ def main(page: Page):
             usuarios_activos = []
 
     def guardar_usuario_activo(mesa_id,user_id,FechaHora_Inicio,Estado):
+        global usuarios_activos
         if not mesa_id or not user_id or not FechaHora_Inicio:
             raise ValueError("Datos insuficientes para guardar el usuario activo.")
 
@@ -270,7 +272,8 @@ def main(page: Page):
             raise ValueError("No te corresponde esa mesa")
 
     def check_rfid_response(button_id,estadoMesa):
-        rfid_data = 15136485
+        rfid_data = 15136485        
+        global usuarios_activos
         cargar_usuarios_activos()
         try:
             # Intenta leer el RFID
