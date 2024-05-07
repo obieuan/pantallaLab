@@ -30,3 +30,12 @@ class payloadsApi:
         }
         return payload
     
+    def finalizarMesaApi(TokenApi,rfid_data,button_id):
+        payload = {
+            "TokenApi": TokenApi,
+            "TarjetaAlumno": rfid_data,
+            "Comando": "Finalizar",
+            "idEspacio": button_id
+        }
+        return payload
+                        

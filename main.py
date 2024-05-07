@@ -2,6 +2,7 @@ import flet as ft
 from flet import Column, Container, Page, Row, Text, colors, icons
 from components.secrets import TokenApi, urlApi
 from components.api import payloadsApi
+from datetime import datetime
 #from raspberrypi4.lector import lecturaDeTarjeta
 import threading
 import requests
@@ -16,7 +17,6 @@ def main(page: Page):
     page.window_full_screen = False
     
     
-
     dlg_modal = None
     button_refs = {}
     button_id = None
@@ -110,24 +110,42 @@ def main(page: Page):
         estado = ft.Column([ft.Text(value=f"Mesa {button_id}", size=15, color=ft.colors.WHITE),
                                 ft.Text(value=f"Disponible", size=10, color=ft.colors.WHITE),],alignment=ft.MainAxisAlignment.CENTER,)
         return estado
+    
+    def cargar_usuarios_activos():
+        global usuarios_activos
+        try:
+            with open('components/usuarios_activos.json', 'r') as archivo:
+                usuarios_activos = json.load(archivo)
+        except FileNotFoundError:
+            usuarios_activos = []
 
-    def guardar_usuario_activo(rfid_data):
-        usuarios_activos.append(rfid_data)
+    def guardar_usuario_activo(mesa_id,user_id,FechaHora_Inicio,Estado):
+        if not mesa_id or not user_id or not FechaHora_Inicio:
+            raise ValueError("Datos insuficientes para guardar el usuario activo.")
+
+        usuario = {
+            'id': mesa_id,
+            'matricula': user_id,
+            'hora_inicio': FechaHora_Inicio,
+            'estado_mesa': Estado
+        }
+        usuarios_activos.append(usuario)
         with open('components/usuarios_activos.json', 'w') as archivo:
             json.dump(usuarios_activos, archivo)
+        cargar_usuarios_activos()
 
-    def eliminar_usuario_activo(matricula):
-        usuario_a_remover = matricula
-        if usuario_a_remover in usuarios_activos:
-            usuarios_activos.remove(usuario_a_remover)
+    def eliminar_usuario_activo(user_id):
+        global usuarios_activos
+        usuarios_activos = [usuario for usuario in usuarios_activos if usuario["matricula"] != str(user_id)]
         with open('components/usuarios_activos.json', 'w') as archivo:
             json.dump(usuarios_activos, archivo)
+        cargar_usuarios_activos()
 
-    def consultar_id(button_id):
+    def consultar_id(button_id, estadoMesa):
         # Cierra el diálogo actual
         close_dlg()
         
-        solicitarEscanear(button_id)        
+        solicitarEscanear(button_id, estadoMesa)        
         print("Button ID:", button_id)
 
     def close_dlg(e=None):
@@ -140,11 +158,11 @@ def main(page: Page):
         dlg_modal.open = True
         page.update()
 
-    def solicitudMesa(button_id):
+    def solicitudMesa(button_id, estadoMesa):
         nonlocal dlg_modal
         dlg_modal = ft.AlertDialog(
             modal=True,
-            title=ft.Text(f"Desbloquear mesa {button_id}",size=30,text_align=ft.TextAlign.CENTER),
+            title=ft.Text(f"Ocupar mesa {button_id}",size=30,text_align=ft.TextAlign.CENTER),
             icon = ft.Icon(name=ft.icons.TABLE_RESTAURANT, color=ft.colors.GREEN_400, size=40),
             content=ft.Text("¿Confirmar acción?",size=25,text_align=ft.TextAlign.CENTER),
             actions=[
@@ -152,7 +170,31 @@ def main(page: Page):
                     icon_color=ft.colors.GREEN_400,
                     icon_size=50,
                     tooltip="Aceptar",
-                    on_click=lambda e: consultar_id(button_id)),
+                    on_click=lambda e: consultar_id(button_id, estadoMesa)),
+                ft.IconButton(icon=ft.icons.CANCEL,
+                    icon_color=ft.colors.RED_400,
+                    icon_size=50,
+                    tooltip="Cancelar",
+                    on_click=close_dlg)
+            ],
+            actions_alignment=ft.MainAxisAlignment.CENTER,
+            on_dismiss=lambda e: print("Acción cancelada"),
+        )
+        return dlg_modal
+
+    def desocuparMesa(button_id, estadoMesa):
+        nonlocal dlg_modal
+        dlg_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Desocupar mesa {button_id}",size=30,text_align=ft.TextAlign.CENTER),
+            icon = ft.Icon(name=ft.icons.TABLE_RESTAURANT, color=ft.colors.GREEN_400, size=40),
+            content=ft.Text("¿Confirmar acción?",size=25,text_align=ft.TextAlign.CENTER),
+            actions=[
+                ft.IconButton(icon=ft.icons.CHECK_CIRCLE,
+                    icon_color=ft.colors.GREEN_400,
+                    icon_size=50,
+                    tooltip="Aceptar",
+                    on_click=lambda e: consultar_id(button_id, estadoMesa)),
                 ft.IconButton(icon=ft.icons.CANCEL,
                     icon_color=ft.colors.RED_400,
                     icon_size=50,
@@ -164,7 +206,7 @@ def main(page: Page):
         )
         return dlg_modal
     
-    def solicitarEscanear(button_id):
+    def solicitarEscanear(button_id, estadoMesa):
         nonlocal dlg_modal
         dlg_modal = ft.AlertDialog(
             modal=True,
@@ -184,25 +226,70 @@ def main(page: Page):
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
-        threading.Timer(1, check_rfid_response, args=[button_id]).start()
+        threading.Timer(1, check_rfid_response, args=[button_id,estadoMesa]).start()   
     
-    def check_rfid_response(button_id):
+    def comprobar_usuario_activo(user_id):
+        # Verificar si el id ya está activo en la lista de diccionarios
+        global usuarios_activos
+        for usuario in usuarios_activos:
+            if str(usuario['matricula']) == user_id:
+                raise ValueError("Ya tienes una mesa activa")
+    
+    def comprobar_mesa_activa(button_id):
+        # Verificar si el id ya está activo en la lista de diccionarios
+        global usuarios_activos
+        for mesa in usuarios_activos:
+            if str(mesa['id']) == str(button_id):
+                return mesa['estado_mesa']
+    
+    def comprobar_vinculacion_mesa(button_id, response_data, usuarios_activos, rfid_data, user_id):
+        print(user_id)        
+        for mesa in usuarios_activos:
+            print(mesa['id'])
+            print(str(button_id))
+            print(mesa['matricula'])
+            print(str(user_id))
+            if str(mesa['id']) == str(button_id) and mesa['matricula'] == str(user_id):
+                print("si entra")
+                incidencia = 1
+                response = requests.post(urlApi,json=payloadsApi.finalizarMesaApi(TokenApi,rfid_data, button_id))
+                if response.status_code == 200:
+                    response_data = response.json()
+                    print(response_data)
+                    if response_data['Codigo'] == '1':                           
+                        dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
+                        dlg_modal.content = ft.Text(f"{response_data['Mensaje']}", size=25, text_align=ft.TextAlign.CENTER)
+                        eliminar_usuario_activo(str(user_id))
+                        if button_id in button_refs:
+                            button_refs[button_id].bgcolor = color_disponible  # Cambia a azul                            
+                            button_refs[button_id].content = estado_disponible(button_id)
+                            page.update()
+                            return                        
+                    raise ValueError((f"{response_data['Mensaje']}"))                
+
+
+
+
+    def check_rfid_response(button_id,estadoMesa):
         rfid_data = 15136485
+        cargar_usuarios_activos()
         try:
             # Intenta leer el RFID
-            #rfid_data = lecturaDeTarjeta()  # Simula la lectura del RFID
-            
+            #rfid_data = lecturaDeTarjeta()  # Simula la lectura del RFID                     
             print(usuarios_activos)
             dlg_modal.title=ft.Text(f"Leido", size=25, text_align=ft.TextAlign.CENTER)
             dlg_modal.content = ft.Text(f"Consultando {str(rfid_data)}", size=25, text_align=ft.TextAlign.CENTER)
             page.update()
             response = requests.post(urlApi,json=payloadsApi.informacionUsuarioApi(TokenApi,rfid_data,button_id))
+                       
             if response.status_code == 200:
                 response_data = response.json()
+                user_id = str(response_data['id']) 
                 print(response_data)
-                if str(response_data['id']) in usuarios_activos:
-                    raise ValueError("Ya tienes una mesa activa")                    
+                if estadoMesa is not None:                    
+                    comprobar_vinculacion_mesa(button_id, response_data, usuarios_activos, rfid_data, user_id) #reviso si es dueño de la mesa                
                     return
+                comprobar_usuario_activo(user_id)  #reviso si ya tiene mesa activa                
                 if rfid_data:
                     #print(rfid_data)
                     url = urlApi                
@@ -213,20 +300,21 @@ def main(page: Page):
                         response_data = response.json()
                         print(response_data)
                         
-                        if response_data['Codigo:'] == '1':
+                        if response_data['Codigo'] == '1':
                             # actualizo la interfaz dependiendo de la respuesta
                             print("autorizado")
                             dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
-                            dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
-                            guardar_usuario_activo(rfid_data)
+                            dlg_modal.content = ft.Text(f"{response_data['Mensaje']}", size=25, text_align=ft.TextAlign.CENTER)
+                            FechaHora_Inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            guardar_usuario_activo(button_id, user_id, FechaHora_Inicio, 1)  #mesa_id,user_id,FechaHora_Inicio,Estado
                             if button_id in button_refs:
-                                button_refs[button_id].bgcolor = '#7E0315'  # Cambia a rojo para mostrar ocupado                            
+                                button_refs[button_id].bgcolor = color_ocupado  # Cambia a rojo para mostrar ocupado                            
                                 button_refs[button_id].content = estado_ocupado(button_id)
                                 page.update()                        
-                        if response_data['Codigo:'] == '0':
+                        if response_data['Codigo'] == '0':
                             print("denegado")
                             dlg_modal.title=ft.Text(f"Acceso denegado:", size=25, text_align=ft.TextAlign.CENTER)
-                            dlg_modal.content = ft.Text(f"{response_data['Mensaje:']}", size=25, text_align=ft.TextAlign.CENTER)
+                            dlg_modal.content = ft.Text(f"{response_data['Mensaje']}", size=25, text_align=ft.TextAlign.CENTER)
                     else:
                         dlg_modal.content = ft.Text("Error en la respuesta de la API", size=25, text_align=ft.TextAlign.CENTER)
                 else:
@@ -238,9 +326,15 @@ def main(page: Page):
             threading.Timer(2, close_dlg).start()
     
 
-    def handle_button_click(e, button_id):
+    def handle_button_click(e, button_id):        
         print(f"Button {button_id} was pressed")
-        dlg_modal = solicitudMesa(button_id)
+        #aqui elijo si la mesa está ocupada o desocupada
+        estadoMesa = comprobar_mesa_activa(button_id)
+        print(estadoMesa)
+        if estadoMesa is not None:
+            dlg_modal = desocuparMesa(button_id, estadoMesa)
+        else:
+            dlg_modal = solicitudMesa(button_id, estadoMesa)
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
@@ -249,7 +343,7 @@ def main(page: Page):
         button_id = button_id
         url = urlApi
         bgcolor = ''
-        response = requests.post(url, json=payloadsApi.informacionApi(TokenApi,button_id), headers=payloadsApi.headers)
+        response = requests.post(url, json=payloadsApi.informacionApi(TokenApi,button_id), headers=payloadsApi.headers)        
 
         if response.status_code == 200:
             # Procesa la respuesta de la API
@@ -263,7 +357,11 @@ def main(page: Page):
                 bgcolor = color_ocupado
                 estado = estado_ocupado(button_id)
             if response_data['user_id'] is not None:
-                guardar_usuario_activo(response_data['user_id'])
+                mesa_id = response_data['id']
+                user_id = response_data['user_id']
+                FechaHora_Inicio = response_data['FechaHora_Inicio']
+                Estado = response_data['Estado']
+                guardar_usuario_activo(mesa_id,user_id,FechaHora_Inicio,Estado)
 
 
         btn = ft.Container(
@@ -290,8 +388,6 @@ def main(page: Page):
 
 
 
- 
-    
     page.add(
         ft.SafeArea(
             ft.Row([
