@@ -134,7 +134,7 @@ def main(page: Page):
             "estado_mesa": Estado
         }
         guardar_usuarios_activos()
-        enviar_dato_serial(f"Mesa {mesa_id} ocupada\n")
+        enviar_dato_serial(f"%,{mesa_id},1\n")
 
     def desactivar_usuario_activo(mesa_id):
         global usuarios_activos
@@ -144,7 +144,7 @@ def main(page: Page):
             "estado_mesa": 0
         }
         guardar_usuarios_activos()
-        enviar_dato_serial(f"Mesa {mesa_id} desocupada\n")
+        enviar_dato_serial(f"%,{mesa_id},0\n")
 
     def enviar_dato_serial(dato):
         ser.write(dato.encode())
