@@ -1,14 +1,13 @@
 import flet as ft
-from flet import Column, Container, Page, Row, Text, colors, icons
+import serial
 from datetime import datetime
 import json
 import os
-import serial
 
 # Configurar el puerto serial (ajusta el puerto y la velocidad según sea necesario)
-ser = serial.Serial('/dev/ttyUSB0', 9600)  # Cambia 'COM3' por el puerto serial correspondiente
+ser = serial.Serial('/dev/ttyUSB0', 9600)  # Cambia '/dev/ttyUSB0' por el puerto serial correspondiente
 
-def main(page: Page):
+def main(page: ft.Page):
     page.adaptive = True
     page.window_always_on_top = True
     page.window_width = 1024
@@ -134,8 +133,7 @@ def main(page: Page):
             "estado_mesa": Estado
         }
         guardar_usuarios_activos()
-        estado = 1
-        enviar_dato_serial(f"%,{mesa_id},{estado}\n")
+        enviar_dato_serial(f"%,{mesa_id},{Estado}\n")
 
     def desactivar_usuario_activo(mesa_id):
         global usuarios_activos
@@ -145,8 +143,7 @@ def main(page: Page):
             "estado_mesa": 0
         }
         guardar_usuarios_activos()
-        estado = 0
-        enviar_dato_serial(f"%,{mesa_id},{estado}\n")
+        enviar_dato_serial(f"%,{mesa_id},0\n")
 
     def enviar_dato_serial(dato):
         print(f"Enviando dato serial: {dato}")
@@ -236,7 +233,7 @@ def main(page: Page):
         print(f"Button {button_id} was pressed")
         estadoMesa = comprobar_mesa_activa(button_id)
         print(estadoMesa)
-        if estadoMesa == 1:
+        if (estadoMesa == 1):
             dlg_modal = desocuparMesa(button_id, estadoMesa)
         else:
             dlg_modal = solicitudMesa(button_id, estadoMesa)

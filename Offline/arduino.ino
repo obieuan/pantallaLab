@@ -1,102 +1,47 @@
-// DECLARA LAS VARIABLES DE COMUNICACION SERIAL
-char RX;
-String mensaje = "";
-bool RELE_1_STATE = 1;
-bool RELE_2_STATE = 1;
-
-// DEFINE LOS PÍNES DIGITALES POR EL NOMBRE Y NUMERO DEL RELE
-#define RELE_1 2
-#define RELE_2 3
-#define RELE_3 4
-#define RELE_4 5
-#define RELE_5 6
-#define RELE_6 7
-#define RELE_7 8
-#define RELE_8 9
 #define RELE_9 31
-#define RELE_10 33
-#define RELE_11 35
-#define RELE_12 37
-#define RELE_13 39
-#define RELE_14 41
-#define RELE_15 43
-#define RELE_16 45
 
-// CICLO DE INICIO, DECLARA ENTRADAS/SALIDAS Y ESTADOS INICIALES
 void setup() {
-  Serial.begin(9600);  // Comunicacion serial a 9600 baudios
-
-  // Declara los pines de los reles como salidas
-  pinMode(RELE_1, OUTPUT);
-  pinMode(RELE_2, OUTPUT);
-  pinMode(RELE_3, OUTPUT);
-  pinMode(RELE_4, OUTPUT);
-  pinMode(RELE_5, OUTPUT);
-  pinMode(RELE_6, OUTPUT);
-  pinMode(RELE_7, OUTPUT);
-  pinMode(RELE_8, OUTPUT);
+  Serial.begin(9600);  // Comunicación serial a 9600 baudios
   pinMode(RELE_9, OUTPUT);
-  pinMode(RELE_10, OUTPUT);
-  pinMode(RELE_11, OUTPUT);
-  pinMode(RELE_12, OUTPUT);
-  pinMode(RELE_13, OUTPUT);
-  pinMode(RELE_14, OUTPUT);
-  pinMode(RELE_15, OUTPUT);
-  pinMode(RELE_16, OUTPUT);
-
-  // Inicia los pines de salida en uno, lo que apaga los reles activos en bajo
-  ALL_OFF();
+  digitalWrite(RELE_9, HIGH);  // Apagar el rele (activo en LOW)
 }
 
 void loop() {
-  // Comprueba si hay una señal serial de entrada
-  while (Serial.available() > 0) {
-    RX = Serial.read();
-    if (RX == '\n') {
-      procesar_mensaje(mensaje);
-      mensaje = "";
-    } else {
-      mensaje += RX;
-    }
+  if (Serial.available() > 0) {
+    char mensaje[20];  // Asegúrate de que el tamaño del array es suficiente para el mensaje esperado
+    Serial.readBytesUntil('\n', mensaje, sizeof(mensaje));
+    procesar_mensaje(mensaje);
   }
 }
 
 // Procesa el mensaje recibido
-void procesar_mensaje(String mensaje) {
+void procesar_mensaje(char* mensaje) {
   // El mensaje tiene el formato "%,mesa_id,estado"
-  if (mensaje.startsWith("%")) {
-    mensaje.remove(0, 1); // Elimina el caracter "%"
-    int index1 = mensaje.indexOf(',');
-    int index2 = mensaje.lastIndexOf(',');
+  if (mensaje[0] == '%') {
+    // Extrae mesa_id y estado
+    int mesa_id, estado;
+    sscanf(mensaje, "%%,%d,%d", &mesa_id, &estado);
 
-    if (index1 > 0 && index2 > index1) {
-      String mesa_id = mensaje.substring(index1 + 1, index2);
-      String estado = mensaje.substring(index2 + 1);
+    Serial.print("Mensaje recibido: mesa ");
+    Serial.print(mesa_id);
+    Serial.print(", estado ");
+    Serial.println(estado);
 
-      int mesa = mesa_id.toInt();
-      int estado_int = estado.toInt();
-
-      Serial.print("Mensaje recibido: mesa ");
-      Serial.print(mesa);
-      Serial.print(", estado ");
-      Serial.println(estado_int);
-
-      if (estado_int == 1) {
-        Serial.print("Encendiendo mesa: ");
-        Serial.println(mesa);
-        encender_rele(mesa);
-      } else if (estado_int == 0) {
-        Serial.print("Apagando mesa: ");
-        Serial.println(mesa);
-        apagar_rele(mesa);
-      }
+    if (estado == 1) {
+      Serial.print("Encendiendo mesa: ");
+      Serial.println(mesa_id);
+      encender_rele(mesa_id);
+    } else if (estado == 0) {
+      Serial.print("Apagando mesa: ");
+      Serial.println(mesa_id);
+      apagar_rele(mesa_id);
     }
   }
 }
 
 // Enciende el rele correspondiente a la mesa
 void encender_rele(int mesa) {
-  switch (mesa) {    
+  switch (mesa) {
     case 1: digitalWrite(RELE_1, HIGH); break;
     case 2: digitalWrite(RELE_2, HIGH); break;
     case 3: digitalWrite(RELE_3, HIGH); break;
@@ -105,7 +50,7 @@ void encender_rele(int mesa) {
     case 6: digitalWrite(RELE_6, HIGH); break;
     case 7: digitalWrite(RELE_7, HIGH); break;
     case 8: digitalWrite(RELE_8, HIGH); break;
-    case 9: digitalWrite(RELE_9, HIGH); break;
+    case 9: digitalWrite(RELE_9, LOW); break;  // Encender RELE_9
     case 10: digitalWrite(RELE_10, HIGH); break;
     case 11: digitalWrite(RELE_11, HIGH); break;
     case 12: digitalWrite(RELE_12, HIGH); break;
@@ -128,7 +73,7 @@ void apagar_rele(int mesa) {
     case 6: digitalWrite(RELE_6, LOW); break;
     case 7: digitalWrite(RELE_7, LOW); break;
     case 8: digitalWrite(RELE_8, LOW); break;
-    case 9: digitalWrite(RELE_9, LOW); break;
+    case 9: digitalWrite(RELE_9, HIGH); break;  // Apagar RELE_9
     case 10: digitalWrite(RELE_10, LOW); break;
     case 11: digitalWrite(RELE_11, LOW); break;
     case 12: digitalWrite(RELE_12, LOW); break;
