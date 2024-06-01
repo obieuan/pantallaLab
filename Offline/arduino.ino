@@ -96,6 +96,29 @@ void procesar_mensaje(String mensaje) {
 
 // Enciende el rele correspondiente a la mesa
 void encender_rele(int mesa) {
+  switch (mesa) {    
+    case 1: digitalWrite(RELE_1, HIGH); break;
+    case 2: digitalWrite(RELE_2, HIGH); break;
+    case 3: digitalWrite(RELE_3, HIGH); break;
+    case 4: digitalWrite(RELE_4, HIGH); break;
+    case 5: digitalWrite(RELE_5, HIGH); break;
+    case 6: digitalWrite(RELE_6, HIGH); break;
+    case 7: digitalWrite(RELE_7, HIGH); break;
+    case 8: digitalWrite(RELE_8, HIGH); break;
+    case 9: digitalWrite(RELE_9, HIGH); break;
+    case 10: digitalWrite(RELE_10, HIGH); break;
+    case 11: digitalWrite(RELE_11, HIGH); break;
+    case 12: digitalWrite(RELE_12, HIGH); break;
+    case 13: digitalWrite(RELE_13, HIGH); break;
+    case 14: digitalWrite(RELE_14, HIGH); break;
+    case 15: digitalWrite(RELE_15, HIGH); break;
+    case 16: digitalWrite(RELE_16, HIGH); break;
+    default: break;
+  }
+}
+
+// Apaga el rele correspondiente a la mesa
+void apagar_rele(int mesa) {
   switch (mesa) {
     case 1: digitalWrite(RELE_1, LOW); break;
     case 2: digitalWrite(RELE_2, LOW); break;
@@ -113,29 +136,6 @@ void encender_rele(int mesa) {
     case 14: digitalWrite(RELE_14, LOW); break;
     case 15: digitalWrite(RELE_15, LOW); break;
     case 16: digitalWrite(RELE_16, LOW); break;
-    default: break;
-  }
-}
-
-// Apaga el rele correspondiente a la mesa
-void apagar_rele(int mesa) {
-  switch (mesa) {
-    case 1: digitalWrite(RELE_1, HIGH); break;
-    case 2: digitalWrite(RELE_2, HIGH); break;
-    case 3: digitalWrite(RELE_3, HIGH); break;
-    case 4: digitalWrite(RELE_4, HIGH); break;
-    case 5: digitalWrite(RELE_5, HIGH); break;
-    case 6: digitalWrite(RELE_6, HIGH); break;
-    case 7: digitalWrite(RELE_7, HIGH); break;
-    case 8: digitalWrite(RELE_8, HIGH); break;
-    case 9: digitalWrite(RELE_9, HIGH); break;
-    case 10: digitalWrite(RELE_10, HIGH); break;
-    case 11: digitalWrite(RELE_11, HIGH); break;
-    case 12: digitalWrite(RELE_12, HIGH); break;
-    case 13: digitalWrite(RELE_13, HIGH); break;
-    case 14: digitalWrite(RELE_14, HIGH); break;
-    case 15: digitalWrite(RELE_15, HIGH); break;
-    case 16: digitalWrite(RELE_16, HIGH); break;
     default: break;
   }
 }
