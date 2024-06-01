@@ -76,6 +76,11 @@ void procesar_mensaje(String mensaje) {
       int mesa = mesa_id.toInt();
       int estado_int = estado.toInt();
 
+      Serial.print("Mensaje recibido: mesa ");
+      Serial.print(mesa);
+      Serial.print(", estado ");
+      Serial.println(estado_int);
+
       if (estado_int == 1) {
         Serial.print("Encendiendo mesa: ");
         Serial.println(mesa);

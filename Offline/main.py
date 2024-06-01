@@ -6,7 +6,7 @@ import os
 import serial
 
 # Configurar el puerto serial (ajusta el puerto y la velocidad según sea necesario)
-ser = serial.Serial('COM10', 9600)  # Cambia 'COM3' por el puerto serial correspondiente
+ser = serial.Serial('/dev/ttyUSB0', 9600)  # Cambia 'COM3' por el puerto serial correspondiente
 
 def main(page: Page):
     page.adaptive = True
@@ -134,7 +134,8 @@ def main(page: Page):
             "estado_mesa": Estado
         }
         guardar_usuarios_activos()
-        enviar_dato_serial(f"%,{mesa_id},1\n")
+        estado = 1
+        enviar_dato_serial(f"%,{mesa_id},{estado}\n")
 
     def desactivar_usuario_activo(mesa_id):
         global usuarios_activos
@@ -144,9 +145,11 @@ def main(page: Page):
             "estado_mesa": 0
         }
         guardar_usuarios_activos()
-        enviar_dato_serial(f"%,{mesa_id},0\n")
+        estado = 0
+        enviar_dato_serial(f"%,{mesa_id},{estado}\n")
 
     def enviar_dato_serial(dato):
+        print(f"Enviando dato serial: {dato}")
         ser.write(dato.encode())
 
     def consultar_id(button_id, estadoMesa):
