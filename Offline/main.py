@@ -5,7 +5,7 @@ import json
 import os
 
 # Configurar el puerto serial (ajusta el puerto y la velocidad según sea necesario)
-ser = serial.Serial('/dev/ttyUSB0', 9600)  # Cambia '/dev/ttyUSB0' por el puerto serial correspondiente
+#ser = serial.Serial('/dev/ttyUSB0', 9600)  # Cambia '/dev/ttyUSB0' por el puerto serial correspondiente
 
 def main(page: ft.Page):
     page.adaptive = True
@@ -70,7 +70,7 @@ def main(page: ft.Page):
     
     page.appbar = ft.AppBar(
         title=ft.Text("Mesas de trabajo"),
-        bgcolor=colors.with_opacity(0.1, ft.cupertino_colors.SYSTEM_BACKGROUND),
+        #bgcolor=colors.with_opacity(0.1, ft.cupertino_colors.SYSTEM_BACKGROUND),
     )
     page.navigation_bar = ft.NavigationBar(
         destinations=[
