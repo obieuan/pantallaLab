@@ -16,6 +16,7 @@ escaneando_qr = False
 monitor_paused = False  # Controlamos si el monitor está en pausa actualizandose
 accion_en_progreso = {}  # Diccionario para las mesas en acción
 
+
 def main(page: ft.Page):
     global escaneando_qr, monitor_paused  
     page.adaptive = True
@@ -104,7 +105,7 @@ def main(page: ft.Page):
     )
 
     # Funciones de control
-# Función para actualizar la UI cuando se reciben los estados de las mesas
+    # Función para actualizar la UI cuando se reciben los estados de las mesas
     def update_ui(mesa_id, estado):
         if accion_en_progreso.get(mesa_id, False):
             print(f"Ignorando actualización de la mesa {mesa_id} ya que hay una acción en progreso")
@@ -124,6 +125,64 @@ def main(page: ft.Page):
 
         if splash_screen_visible and mesa_id == num_mesas:
             hide_splash()
+
+    def crear_teclado_numerico(campo_clave, page):
+        # Función que agrega un número al campo_clave
+        ancho = 100
+        alto = 30
+        def agregar_numero(e):
+            campo_clave.value += e.control.data
+            campo_clave.update()
+
+        # Función que elimina el último carácter del campo_clave
+        def retroceder(e):
+            campo_clave.value = campo_clave.value[:-1]
+            campo_clave.update()
+
+        # Crear los botones del 1 al 9
+        fila1 = ft.Row(
+            controls=[
+                ft.ElevatedButton(text="1", data="1", on_click=agregar_numero, width=ancho, height=alto),
+                ft.ElevatedButton(text="2", data="2", on_click=agregar_numero, width=ancho, height=alto),
+                ft.ElevatedButton(text="3", data="3", on_click=agregar_numero, width=ancho, height=alto)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER
+        )
+        fila2 = ft.Row(
+            controls=[
+                ft.ElevatedButton(text="4", data="4", on_click=agregar_numero, width=ancho, height=alto),
+                ft.ElevatedButton(text="5", data="5", on_click=agregar_numero, width=ancho, height=alto),
+                ft.ElevatedButton(text="6", data="6", on_click=agregar_numero, width=ancho, height=alto)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER
+        )
+        fila3 = ft.Row(
+            controls=[
+                ft.ElevatedButton(text="7", data="7", on_click=agregar_numero, width=ancho, height=alto),
+                ft.ElevatedButton(text="8", data="8", on_click=agregar_numero, width=ancho, height=alto),
+                ft.ElevatedButton(text="9", data="9", on_click=agregar_numero, width=ancho, height=alto)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER
+        )
+        # Fila final con el botón "0" y "⌫" (retroceso)
+        fila4 = ft.Row(
+            controls=[
+                ft.ElevatedButton(text="0", data="0", on_click=agregar_numero, width=ancho*2, height=alto),
+                ft.ElevatedButton(text="⌫", on_click=retroceder, width=ancho, height=alto),
+            ],
+            alignment=ft.MainAxisAlignment.CENTER
+        )
+
+        # Agrupar todas las filas en una columna
+        teclado = ft.Column(
+            controls=[fila1, fila2, fila3, fila4],
+            alignment=ft.MainAxisAlignment.CENTER
+        )
+
+        return teclado
+
+
+
 
 
 
@@ -160,7 +219,9 @@ def main(page: ft.Page):
 
     # Función para escanear el QR y actualizar la pantalla en Flet
     def scan_qr(update_image, process_qr_code, page, stop_event):
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(0,cv2.CAP_DSHOW)   #Para windows
+        #cap = cv2.VideoCapture(0, cv2.CAP_V4L2)   #Para raspberry pi
+
 
         while not stop_event.is_set():
             ret, frame = cap.read()
@@ -211,7 +272,7 @@ def main(page: ft.Page):
 
         # Crear el campo de entrada y el mensaje de error
         campo_clave = ft.TextField(label="Ingrese su clave numérica", password=True, keyboard_type=ft.KeyboardType.NUMBER)
-        error_text = ft.Text("", color=ft.colors.RED)
+        sub_text = ft.Text("Ingrese su matrícula o muestre su QR", color=ft.colors.RED)
 
         # Placeholder de texto mientras se inicia la cámara
         camera_text = ft.Text("Iniciando cámara...", size=20)  # Texto temporal en lugar de la cámara
@@ -219,19 +280,50 @@ def main(page: ft.Page):
         # Crear un contenedor para mostrar la imagen de la cámara
         camera_image = ft.Image(width=200, height=200)
 
+        teclado_numerico = crear_teclado_numerico(campo_clave, page)
+
         # Función para actualizar la imagen de la cámara en la UI
         def update_image(img_base64):
             # Si el contenido aún es el texto, lo reemplazamos por la imagen de la cámara
-            if dlg_modal.content.controls[0] == camera_text:
-                dlg_modal.content.controls[0] = camera_image  # Reemplaza el texto con la imagen de la cámara
+            if dlg_modal.content.controls[0].content.controls[1] == camera_text:
+                dlg_modal.content.controls[0].content.controls[1] = camera_image  # Reemplaza el texto con la imagen de la cámara
             camera_image.src_base64 = img_base64  # Actualiza el contenido de la imagen
             page.update()
 
         # Crear el modal con el texto inicial
         dlg_modal = ft.AlertDialog(
             modal=True,
-            title=ft.Text(f"Iniciar mesa {button_id}"),
-            content=ft.Column([camera_text, campo_clave, error_text]),  # Inicia con el texto de la cámara
+            title=ft.Text(f"Mesa {button_id}"),
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            sub_text,
+                            camera_text,
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    bgcolor=ft.colors.SURFACE_VARIANT,
+                    border_radius=20,
+                    padding=20,
+                    height=300,
+                    width=300,
+                ),                
+                ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            campo_clave,teclado_numerico
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    bgcolor=ft.colors.SURFACE_VARIANT,
+                    border_radius=20,
+                    padding=20,
+                    height=300,
+                    width=400,
+                )                
+            ]),  # Inicia con el texto de la cámara
             actions=[
                 ft.TextButton("Confirmar", on_click=confirmar_clave),
                 ft.TextButton("Cancelar", on_click=close_dlg)
@@ -284,7 +376,9 @@ def main(page: ft.Page):
 
                 # Aquí llamamos al monitor para que vuelva a consultar el estado real de todas las mesas
                 asyncio.run(monitor.consultar_estado_todas_mesas())  # Llamada a la función para consultar todas las mesas
-                
+            elif response.status_code == 401:
+                print("Token inválido o expirado. Verifica las credenciales.")
+                mostrar_mensaje_confirmacion("Error: Token inválido o expirado.")
             else:
                 print(f"Error en la API: {response.status_code} - {response.text}")
                 mostrar_mensaje_confirmacion(f"Error al ocupar la mesa {button_id}")
@@ -294,6 +388,7 @@ def main(page: ft.Page):
         
         # Una vez que la API responde, marcamos que la acción ha finalizado
         accion_en_progreso[button_id] = False
+
 
 
     # Crear filas de botones

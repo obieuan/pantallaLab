@@ -13,18 +13,31 @@ class MonitorMesa:
 
     async def consultar_estado_todas_mesas(self):
         async with aiohttp.ClientSession() as session:
-            # Utilizamos la función infoTodasMesas en lugar de solicitar mesa por mesa
-            payload = payloadsApi.infoTodasMesas(self.token_api)  
-            async with session.post(self.url_api, json=payload, headers=payloadsApi.headers) as response:
+            payload = payloadsApi.infoTodasMesas(TokenApi)
+            async with session.post(urlApi, json=payload, headers=payloadsApi.headers) as response:
+                if response.status == 401:
+                    print("Error: Token inválido o expirado. Verifica las credenciales.")
+                    return
+                elif response.status != 200:
+                    print(f"Error en la API: {response.status}")
+                    return
                 try:
-                    # Intentamos obtener la respuesta JSON
-                    estado_mesas = await response.json()
-                    print(f"Respuesta de la API para todas las mesas: {estado_mesas}")  # Para depuración
+                    # Obtener la respuesta JSON
+                    data = await response.json()
+                    print(f"Respuesta de la API para todas las mesas: {data}")
 
-                    return estado_mesas  # Devolvemos el JSON con el estado de todas las mesas
+                    # Validar que la respuesta sea una lista
+                    if isinstance(data, list):
+                        for mesa in data:
+                            mesa_id = mesa['id']  # Accedemos al id de cada mesa
+                            estado = mesa['Estado']
+                            self.update_ui_func(mesa_id, estado)
+                    else:
+                        print("Error: La respuesta no es una lista de mesas")
                 except Exception as e:
-                    print(f"Error al procesar la respuesta de la API para todas las mesas: {e}")
-                    return None
+                    print(f"Error al procesar la respuesta de la API: {e}")
+
+
 
     async def monitor_estado_mesas(self):
         while True:
