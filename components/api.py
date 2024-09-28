@@ -6,34 +6,40 @@ class payloadsApi:
     def informacionApi(TokenApi,button_id):
         payload = {
             "TokenApi": TokenApi,
-            "TarjetaAlumno": 1, #puede ser cualquier cosa
             "Comando": "Informacion",
             "idEspacio": button_id
         }
         return payload
-    
-    def iniciarMesaApi(TokenApi,rfid_data,button_id):
+
+    def infoTodasMesas(TokenApi):
         payload = {
             "TokenApi": TokenApi,
-            "TarjetaAlumno": rfid_data,
+            "Comando": "InfoTodasMesas"
+        }
+        return payload
+    
+    def iniciarMesaApi(TokenApi,MatriculaData,button_id):
+        payload = {
+            "TokenApi": TokenApi,
+            "Matricula": MatriculaData,
             "Comando": "Iniciar",
             "idEspacio": button_id 
         }
         return payload
     
-    def informacionUsuarioApi(TokenApi,rfid_data,button_id):
+    def informacionUsuarioApi(TokenApi,MatriculaData,button_id):
         payload = {
             "TokenApi": TokenApi,
-            "TarjetaAlumno": rfid_data,
+            "Matricula": MatriculaData,
             "Comando": "InfoAlumno",
             "idEspacio": button_id
         }
         return payload
     
-    def finalizarMesaApi(TokenApi,rfid_data,button_id):
+    def finalizarMesaApi(TokenApi,MatriculaData,button_id):
         payload = {
             "TokenApi": TokenApi,
-            "TarjetaAlumno": rfid_data,
+            "Matricula": MatriculaData,
             "Comando": "Finalizar",
             "idEspacio": button_id
         }

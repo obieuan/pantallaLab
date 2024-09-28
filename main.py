@@ -258,7 +258,10 @@ def main(page: ft.Page):
             tarjeta_alumno = campo_clave.value
             if tarjeta_alumno.isdigit():
                 print(f"Clave ingresada: {tarjeta_alumno}")
-                iniciar_mesa(tarjeta_alumno, button_id)
+                if not estado_actual:
+                    iniciar_mesa(tarjeta_alumno, button_id)
+                else:
+                    finalizar_mesa(tarjeta_alumno, button_id)
                 close_dlg()   
             else:
                 error_text.value = "Por favor, ingrese una clave válida."
@@ -444,6 +447,11 @@ def main(page: ft.Page):
                 elif response_json['Codigo'] == '1602':
                     print("Error: Token no válido. Notifica al administrador.")
                     mostrar_mensaje_confirmacion("Error: Token no válido.")
+                elif response_json['Codigo'] == '1603':
+                    print("Error: Se requiere la matrícula para este comando.")
+                    mostrar_mensaje_confirmacion("Error: Matrícula no proporcionada.")
+                elif response_json['Codigo'] == '1604':
+                    print("Error: La matrícula no se encuentra en el sistema. Verifica la matrícula.")
                 elif response_json['Codigo'] == '1620':
                     print("Error: El espacio no se encuentra inicializado y no puede finalizar.")
                     mostrar_mensaje_confirmacion("Error: El espacio no ha sido iniciado.")
