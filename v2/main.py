@@ -106,10 +106,7 @@ def main(page: ft.Page):
 
     # Funciones de control
     # Función para actualizar la UI cuando se reciben los estados de las mesas
-    def update_ui(mesa_id, estado):
-        if accion_en_progreso.get(mesa_id, False):
-            print(f"Ignorando actualización de la mesa {mesa_id} ya que hay una acción en progreso")
-            return  # Ignoramos la actualización si hay una acción en progreso
+    def update_ui(mesa_id, estado):        
 
         print(f"Actualizando UI para mesa {mesa_id} con estado {estado}")
         if mesa_id in button_refs:
@@ -180,11 +177,6 @@ def main(page: ft.Page):
         )
 
         return teclado
-
-
-
-
-
 
     def control_mesa(mesa_id, estado):
         print(f"Controlando mesa física {mesa_id} con estado {estado}")
@@ -259,6 +251,8 @@ def main(page: ft.Page):
         monitor_paused = True  # Pausar el monitoreo de las mesas
         escaneando_qr = True  # Indicar que estamos escaneando QR
         current_button_id = button_id  # Guardar el button_id actual para el escaneo de QR
+        estado_actual = monitor.obtener_estado_mesa(button_id) # Guardar el estado actual del boton para saber si esta ocupado o desocupado
+        
 
         def confirmar_clave(e):
             tarjeta_alumno = campo_clave.value
@@ -271,8 +265,8 @@ def main(page: ft.Page):
                 page.update()
 
         # Crear el campo de entrada y el mensaje de error
-        campo_clave = ft.TextField(label="Ingrese su clave numérica", password=True, keyboard_type=ft.KeyboardType.NUMBER)
-        sub_text = ft.Text("Ingrese su matrícula o muestre su QR", color=ft.colors.RED)
+        campo_clave = ft.TextField(label="Opción 2: Ingresa tu matrícula", password=False, border="underline", filled=True, keyboard_type=ft.KeyboardType.NUMBER)
+        sub_text = ft.Text("Opción 1: muestre su QR", color=ft.colors.RED)
 
         # Placeholder de texto mientras se inicia la cámara
         camera_text = ft.Text("Iniciando cámara...", size=20)  # Texto temporal en lugar de la cámara
@@ -281,6 +275,11 @@ def main(page: ft.Page):
         camera_image = ft.Image(width=200, height=200)
 
         teclado_numerico = crear_teclado_numerico(campo_clave, page)
+
+        if estado_actual:
+            titulo = f"Desbloquear Mesa {button_id}"
+        else:
+            titulo = f"Solicitar Mesa {button_id}"
 
         # Función para actualizar la imagen de la cámara en la UI
         def update_image(img_base64):
@@ -293,7 +292,7 @@ def main(page: ft.Page):
         # Crear el modal con el texto inicial
         dlg_modal = ft.AlertDialog(
             modal=True,
-            title=ft.Text(f"Mesa {button_id}"),
+            title=ft.Text(titulo),
             content=ft.Row([
                 ft.Container(
                     content=ft.Column(
@@ -353,7 +352,7 @@ def main(page: ft.Page):
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
-
+    
     # Función para iniciar la mesa usando la API
     def iniciar_mesa(tarjeta_alumno, button_id):
         global accion_en_progreso
@@ -370,15 +369,40 @@ def main(page: ft.Page):
         try:
             response = requests.post(urlApi, json=payload, headers=payloadsApi.headers)
             if response.status_code == 200:
-                print(f"API ha confirmado que la mesa {button_id} está ocupada")
-                # Mostrar el mensaje de confirmación
-                mostrar_mensaje_confirmacion(f"Mesa {button_id} ocupada correctamente")
-
-                # Aquí llamamos al monitor para que vuelva a consultar el estado real de todas las mesas
-                asyncio.run(monitor.consultar_estado_todas_mesas())  # Llamada a la función para consultar todas las mesas
+                response_json = response.json()
+                # Verifica el código devuelto en la respuesta JSON
+                if response_json['Codigo'] == '1':
+                    print(f"API ha confirmado que la mesa {button_id} se ha ocupado correctamente.")
+                    mostrar_mensaje_confirmacion(f"Mesa {button_id} iniciada correctamente")
+                    # Aquí llamamos al monitor para que vuelva a consultar el estado real de todas las mesas
+                    asyncio.run(monitor.consultar_estado_todas_mesas())  # Llamada a la función para consultar todas las mesas
+                elif response_json['Codigo'] == '1601':
+                    print("Error: Parámetros no válidos. Revisa los datos enviados.")
+                    mostrar_mensaje_confirmacion("Error: Parámetros no válidos.")
+                elif response_json['Codigo'] == '1602':
+                    print("Error: Token no válido. Notifica al administrador.")
+                    mostrar_mensaje_confirmacion("Error: Token no válido.")
+                elif response_json['Codigo'] == '1603':
+                    print("Error: Se requiere la matrícula para este comando.")
+                    mostrar_mensaje_confirmacion("Error: Matrícula no proporcionada.")
+                elif response_json['Codigo'] == '1604':
+                    print("Error: La matrícula no se encuentra en el sistema. Verifica la matrícula.")
+                    mostrar_mensaje_confirmacion("Error: Matrícula no encontrada.")
+                elif response_json['Codigo'] == '1605':
+                    print("Error: El espacio no existe. Verifica el ID del espacio.")
+                    mostrar_mensaje_confirmacion("Error: Espacio no encontrado.")
+                elif response_json['Codigo'] == '1608':
+                    print("Error: El espacio ya ha sido iniciado anteriormente.")
+                    mostrar_mensaje_confirmacion("Error: El espacio ya ha sido iniciado.")
+                elif response_json['Codigo'] == '1609':
+                    print("Error: El alumno ya ha inicializado un espacio y sigue activo.")
+                    mostrar_mensaje_confirmacion("Error: El alumno ya tiene un espacio activo.")
+                else:
+                    print(f"Error desconocido: {response_json['Codigo']}")
+                    mostrar_mensaje_confirmacion(f"Error desconocido: {response_json['Codigo']}")
             elif response.status_code == 401:
-                print("Token inválido o expirado. Verifica las credenciales.")
-                mostrar_mensaje_confirmacion("Error: Token inválido o expirado.")
+                print("Token inválido o expirado.")
+                mostrar_mensaje_confirmacion("Error: Token inválido, notifica al administrador.")            
             else:
                 print(f"Error en la API: {response.status_code} - {response.text}")
                 mostrar_mensaje_confirmacion(f"Error al ocupar la mesa {button_id}")
@@ -390,6 +414,57 @@ def main(page: ft.Page):
         accion_en_progreso[button_id] = False
 
 
+    # Función para finalizar la mesa usando la API
+    def finalizar_mesa(tarjeta_alumno, button_id):
+        global accion_en_progreso
+        print(f"Finalizando mesa {button_id} con TarjetaAlumno: {tarjeta_alumno}")
+        
+        # Marcamos que la acción está en progreso para esta mesa
+        accion_en_progreso[button_id] = True
+
+        # Genera el payload usando la función finalizarMesaApi
+        payload = payloadsApi.finalizarMesaApi(TokenApi, tarjeta_alumno, button_id)
+        print(f"Payload generado: {payload}")
+        
+        # Enviar el payload a la API
+        try:
+            response = requests.post(urlApi, json=payload, headers=payloadsApi.headers)
+            if response.status_code == 200:
+                response_json = response.json()
+                # Verifica el código devuelto en la respuesta JSON
+                if response_json['Codigo'] == '1':
+                    print(f"API ha confirmado que la mesa {button_id} se ha finalizado correctamente.")
+                    mostrar_mensaje_confirmacion(f"Mesa {button_id} desocupada correctamente")
+                    
+                    # Aquí llamamos al monitor para que vuelva a consultar el estado real de todas las mesas
+                    asyncio.run(monitor.consultar_estado_todas_mesas())  # Llamada a la función para consultar todas las mesas
+                elif response_json['Codigo'] == '1601':
+                    print("Error: Parámetros no válidos. Revisa los datos enviados.")
+                    mostrar_mensaje_confirmacion("Error: Parámetros no válidos.")
+                elif response_json['Codigo'] == '1602':
+                    print("Error: Token no válido. Notifica al administrador.")
+                    mostrar_mensaje_confirmacion("Error: Token no válido.")
+                elif response_json['Codigo'] == '1620':
+                    print("Error: El espacio no se encuentra inicializado y no puede finalizar.")
+                    mostrar_mensaje_confirmacion("Error: El espacio no ha sido iniciado.")
+                elif response_json['Codigo'] == '1621':
+                    print("Error: El espacio a finalizar no corresponde al usuario.")
+                    mostrar_mensaje_confirmacion("Error: El espacio no corresponde a tu usuario.")
+                else:
+                    print(f"Error desconocido: {response_json['Codigo']}")
+                    mostrar_mensaje_confirmacion(f"Error desconocido: {response_json['Codigo']}")
+            elif response.status_code == 401:
+                print("Token inválido o expirado. Verifica las credenciales.")
+                mostrar_mensaje_confirmacion("Error: Token inválido o expirado.")
+            else:
+                print(f"Error en la API: {response.status_code} - {response.text}")
+                mostrar_mensaje_confirmacion(f"Error al desocupar la mesa {button_id}")
+        except Exception as e:
+            print(f"Error enviando el payload a la API: {e}")
+            mostrar_mensaje_confirmacion(f"Error en la solicitud API para mesa {button_id}")
+        
+        # Una vez que la API responde, marcamos que la acción ha finalizado
+        accion_en_progreso[button_id] = False
 
     # Crear filas de botones
     def crear_fila_botones(start_id, cantidad):
