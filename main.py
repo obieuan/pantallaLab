@@ -4,6 +4,9 @@ import cv2
 import base64
 import requests
 import numpy as np
+import time
+import serial
+import atexit
 from pyzbar.pyzbar import decode, ZBarSymbol
 import threading
 from components.buttonObi import buttonObi
@@ -11,78 +14,42 @@ from components.monitor_mesa import MonitorMesa
 from components.api import payloadsApi
 from components.secrets import TokenApi, urlApi 
 
-# Variable global para controlar el escaneo y el monitor
+# Variables globales
 escaneando_qr = False
 monitor_paused = False  # Controlamos si el monitor está en pausa actualizandose
 accion_en_progreso = {}  # Diccionario para las mesas en acción
+stop_event = None  # Variable para detener el hilo de la cámara
 
+# Configura el puerto serial y la velocidad del puerto al inicio del programa
+arduino = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+time.sleep(2)  # Espera para que se establezca la conexión y el Arduino se reinicie
 
 def main(page: ft.Page):
-    global escaneando_qr, monitor_paused  
+    global escaneando_qr, monitor_paused, stop_event
     page.adaptive = True
     page.window_always_on_top = True
     page.window_width = 1024
     page.window_height = 600
-    page.window_resizable = False
-    page.window_full_screen = False
+    page.window_resizable = True
+    page.window_full_screen = True
 
     button_refs = {}
     splash_screen_visible = True
     dlg_modal = None  # Modal activo
-    current_button_id = None  
+    current_button_id = None
+
+    # Cerrar recursos cuando se cierra la ventana de la aplicación
+    def on_close(e):
+        close_resources()
+        print("Aplicación cerrada.")
+
+    page.on_window_close = on_close
 
     def hide_splash():
         nonlocal splash_screen_visible
         splash_screen_visible = False
-        page.splash = None
+        page.splash = None        
         page.update()
-
-    # Splash screen 
-    page.splash = ft.Container(
-        bgcolor=ft.colors.WHITE,
-        content=ft.Column([
-            ft.Container(
-                content=ft.Row(
-                    controls=[
-                        ft.Image(
-                            src="assets/logosup.png",
-                            width=500,
-                            height=150,
-                            fit=ft.ImageFit.CONTAIN,
-                            border_radius=ft.border_radius.all(10)
-                        ),
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=20
-                )
-            ),
-            ft.Container(
-                content=ft.Row(
-                    controls=[ft.ProgressRing(width=50, height=50)],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=20
-                )
-            ),
-            ft.Container(
-                content=ft.Row(
-                    controls=[
-                        ft.Image(
-                            src="assets/logo_eium.png",
-                            width=150,
-                            height=150,
-                            fit=ft.ImageFit.CONTAIN,
-                            border_radius=ft.border_radius.all(10)
-                        ),
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=20
-                )
-            ),
-        ],
-        alignment=ft.MainAxisAlignment.CENTER),
-        alignment=ft.alignment.center
-    )
-    page.update()
 
     page.appbar = ft.AppBar(
         title=ft.Text("Mesas de trabajo")
@@ -104,10 +71,8 @@ def main(page: ft.Page):
         on_change=print("hola")
     )
 
-    # Funciones de control
     # Función para actualizar la UI cuando se reciben los estados de las mesas
-    def update_ui(mesa_id, estado):        
-
+    def update_ui(mesa_id, estado):
         print(f"Actualizando UI para mesa {mesa_id} con estado {estado}")
         if mesa_id in button_refs:
             # Cambiar el color del botón en función del estado
@@ -124,19 +89,17 @@ def main(page: ft.Page):
             hide_splash()
 
     def crear_teclado_numerico(campo_clave, page):
-        # Función que agrega un número al campo_clave
         ancho = 100
         alto = 30
+
         def agregar_numero(e):
             campo_clave.value += e.control.data
             campo_clave.update()
 
-        # Función que elimina el último carácter del campo_clave
         def retroceder(e):
             campo_clave.value = campo_clave.value[:-1]
             campo_clave.update()
 
-        # Crear los botones del 1 al 9
         fila1 = ft.Row(
             controls=[
                 ft.ElevatedButton(text="1", data="1", on_click=agregar_numero, width=ancho, height=alto),
@@ -161,7 +124,6 @@ def main(page: ft.Page):
             ],
             alignment=ft.MainAxisAlignment.CENTER
         )
-        # Fila final con el botón "0" y "⌫" (retroceso)
         fila4 = ft.Row(
             controls=[
                 ft.ElevatedButton(text="0", data="0", on_click=agregar_numero, width=ancho*2, height=alto),
@@ -170,7 +132,6 @@ def main(page: ft.Page):
             alignment=ft.MainAxisAlignment.CENTER
         )
 
-        # Agrupar todas las filas en una columna
         teclado = ft.Column(
             controls=[fila1, fila2, fila3, fila4],
             alignment=ft.MainAxisAlignment.CENTER
@@ -178,18 +139,31 @@ def main(page: ft.Page):
 
         return teclado
 
-    def control_mesa(mesa_id, estado):
-        print(f"Controlando mesa física {mesa_id} con estado {estado}")
+    def control_mesa(mesas):
+        print(f"Data: {mesas}")
         # Aquí controlamos la energia de las mesas
+        try:
+            arduino.write(mesas.encode())
+            respuesta = arduino.readline().decode().strip()
+            print(f"Respuesta del Arduino: {respuesta}")
+
+        except serial.SerialException as e:
+            print(f"Error de comunicación con el puerto serial: {e}")
+        except Exception as e:
+            print(f"Ha ocurrido un error: {e}")
+
 
     num_mesas = 14
+    def close_resources():
+        if arduino.is_open:
+            arduino.close()
+            print("Puerto serial cerrado correctamente.")
 
-    # Función para manejar el clic en el botón de una mesa
+
     def on_button_click(e, button_id):
         print(f"Button {button_id} clicked")
         abrir_modal_clave(button_id)
 
-    # Función para mostrar un mensaje de confirmación al usuario
     def mostrar_mensaje_confirmacion(mensaje):
         page.snack_bar = ft.SnackBar(
             content=ft.Text(mensaje),
@@ -198,7 +172,6 @@ def main(page: ft.Page):
         page.snack_bar.open = True
         page.update()
 
-    # Función para procesar el QR escaneado
     def process_qr_code(matricula, page):
         global current_button_id
         if current_button_id is None:
@@ -209,40 +182,35 @@ def main(page: ft.Page):
         iniciar_mesa(matricula, current_button_id)  # Usamos el QR como TarjetaAlumno
         close_dlg()  # Cerrar el modal tras el escaneo
 
-    # Función para escanear el QR y actualizar la pantalla en Flet
     def scan_qr(update_image, process_qr_code, page, stop_event):
-        cap = cv2.VideoCapture(0,cv2.CAP_DSHOW)   #Para windows
-        #cap = cv2.VideoCapture(0, cv2.CAP_V4L2)   #Para raspberry pi
+        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)   # Para raspberry pi
 
+        try:
+            while not stop_event.is_set():
+                ret, frame = cap.read()
+                if not ret:
+                    continue
 
-        while not stop_event.is_set():
-            ret, frame = cap.read()
-            if not ret:
-                continue
+                decoded_objects = decode(frame, symbols=[ZBarSymbol.QRCODE])
 
-            # Decodificamos solo los códigos QR (ZBarSymbol.QRCODE filtra únicamente QR)
-            decoded_objects = decode(frame, symbols=[ZBarSymbol.QRCODE])
+                for obj in decoded_objects:
+                    matricula = obj.data.decode("utf-8")
+                    process_qr_code(matricula, page)
+                    stop_event.set()
 
-            for obj in decoded_objects:
-                matricula = obj.data.decode("utf-8")
-                process_qr_code(matricula, page)
-                stop_event.set()   
+                _, img_encoded = cv2.imencode('.jpg', frame)
+                img_bytes = img_encoded.tobytes()
 
-            # Convertir el frame en imagen JPEG
-            _, img_encoded = cv2.imencode('.jpg', frame)
-            img_bytes = img_encoded.tobytes()
+                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                update_image(img_base64)
 
-            # Convertimos la imagen en formato base64
-            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+        finally:
+            if cap.isOpened():
+                cap.release()
+            cv2.destroyAllWindows()
 
-            # Actualizamos la imagen en la pantalla usando src_base64
-            update_image(img_base64)
-
-        cap.release()
-
-    # Función para abrir el modal y mostrar la cámara o para pedir la clave
     def abrir_modal_clave(button_id):
-        global escaneando_qr, monitor_paused, current_button_id   
+        global escaneando_qr, monitor_paused, current_button_id, stop_event   
         nonlocal dlg_modal
 
         if monitor_paused:
@@ -250,10 +218,9 @@ def main(page: ft.Page):
 
         monitor_paused = True  # Pausar el monitoreo de las mesas
         escaneando_qr = True  # Indicar que estamos escaneando QR
-        current_button_id = button_id  # Guardar el button_id actual para el escaneo de QR
-        estado_actual = monitor.obtener_estado_mesa(button_id) # Guardar el estado actual del boton para saber si esta ocupado o desocupado
+        current_button_id = button_id
+        estado_actual = monitor.obtener_estado_mesa(button_id)
         
-
         def confirmar_clave(e):
             tarjeta_alumno = campo_clave.value
             if tarjeta_alumno.isdigit():
@@ -267,14 +234,10 @@ def main(page: ft.Page):
                 error_text.value = "Por favor, ingrese una clave válida."
                 page.update()
 
-        # Crear el campo de entrada y el mensaje de error
         campo_clave = ft.TextField(label="Opción 2: Ingresa tu matrícula", password=False, border="underline", filled=True, keyboard_type=ft.KeyboardType.NUMBER)
         sub_text = ft.Text("Opción 1: muestre su QR", color=ft.colors.RED)
 
-        # Placeholder de texto mientras se inicia la cámara
-        camera_text = ft.Text("Iniciando cámara...", size=20)  # Texto temporal en lugar de la cámara
-
-        # Crear un contenedor para mostrar la imagen de la cámara
+        camera_text = ft.Text("Iniciando cámara...", size=20)
         camera_image = ft.Image(width=200, height=200)
 
         teclado_numerico = crear_teclado_numerico(campo_clave, page)
@@ -284,25 +247,19 @@ def main(page: ft.Page):
         else:
             titulo = f"Solicitar Mesa {button_id}"
 
-        # Función para actualizar la imagen de la cámara en la UI
         def update_image(img_base64):
-            # Si el contenido aún es el texto, lo reemplazamos por la imagen de la cámara
             if dlg_modal.content.controls[0].content.controls[1] == camera_text:
-                dlg_modal.content.controls[0].content.controls[1] = camera_image  # Reemplaza el texto con la imagen de la cámara
-            camera_image.src_base64 = img_base64  # Actualiza el contenido de la imagen
+                dlg_modal.content.controls[0].content.controls[1] = camera_image
+            camera_image.src_base64 = img_base64
             page.update()
 
-        # Crear el modal con el texto inicial
         dlg_modal = ft.AlertDialog(
             modal=True,
             title=ft.Text(titulo),
             content=ft.Row([
                 ft.Container(
                     content=ft.Column(
-                        controls=[
-                            sub_text,
-                            camera_text,
-                        ],
+                        controls=[sub_text, camera_text],
                         alignment=ft.MainAxisAlignment.CENTER,
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
@@ -314,9 +271,7 @@ def main(page: ft.Page):
                 ),                
                 ft.Container(
                     content=ft.Column(
-                        controls=[
-                            campo_clave,teclado_numerico
-                        ],
+                        controls=[campo_clave, teclado_numerico],
                         alignment=ft.MainAxisAlignment.CENTER,
                     ),
                     bgcolor=ft.colors.SURFACE_VARIANT,
@@ -325,7 +280,7 @@ def main(page: ft.Page):
                     height=300,
                     width=400,
                 )                
-            ]),  # Inicia con el texto de la cámara
+            ]),
             actions=[
                 ft.TextButton("Confirmar", on_click=confirmar_clave),
                 ft.TextButton("Cancelar", on_click=close_dlg)
@@ -333,79 +288,53 @@ def main(page: ft.Page):
             actions_alignment=ft.MainAxisAlignment.END
         )
 
-        open_dlg_modal()  # Abre el modal
+        open_dlg_modal()
 
-        # Iniciar el hilo de escaneo de QR
         stop_event = threading.Event()
         threading.Thread(target=scan_qr, args=(update_image, process_qr_code, page, stop_event), daemon=True).start()
 
-    # Función para cerrar el modal
     def close_dlg(e=None):
-        global escaneando_qr, monitor_paused
+        global escaneando_qr, monitor_paused, stop_event
         nonlocal dlg_modal
         if dlg_modal is not None:
             dlg_modal.open = False
-            escaneando_qr = False  # Dejamos de escanear
-            monitor_paused = False  # Reanudar el monitoreo de mesas
+            escaneando_qr = False
+            monitor_paused = False
+            
+            if stop_event is not None:
+                stop_event.set()
+
+            import time
+            time.sleep(0.5)
+            stop_event = None
             page.update()
 
-    # Función para abrir el modal
     def open_dlg_modal(e=None):
         nonlocal dlg_modal
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
     
-    # Función para iniciar la mesa usando la API
     def iniciar_mesa(tarjeta_alumno, button_id):
         global accion_en_progreso
         print(f"Iniciando mesa {button_id} con TarjetaAlumno: {tarjeta_alumno}")
         
-        # Marcamos que la acción está en progreso para esta mesa
         accion_en_progreso[button_id] = True
 
-        # Genera el payload usando la función iniciarMesaApi
         payload = payloadsApi.iniciarMesaApi(TokenApi, tarjeta_alumno, button_id)
         print(f"Payload generado: {payload}")
         
-        # Enviar el payload a la API
         try:
             response = requests.post(urlApi, json=payload, headers=payloadsApi.headers)
             if response.status_code == 200:
                 response_json = response.json()
-                # Verifica el código devuelto en la respuesta JSON
                 if response_json['Codigo'] == '1':
                     print(f"API ha confirmado que la mesa {button_id} se ha ocupado correctamente.")
                     mostrar_mensaje_confirmacion(f"Mesa {button_id} iniciada correctamente")
-                    # Aquí llamamos al monitor para que vuelva a consultar el estado real de todas las mesas
-                    asyncio.run(monitor.consultar_estado_todas_mesas())  # Llamada a la función para consultar todas las mesas
-                elif response_json['Codigo'] == '1601':
-                    print("Error: Parámetros no válidos. Revisa los datos enviados.")
-                    mostrar_mensaje_confirmacion("Error: Parámetros no válidos.")
-                elif response_json['Codigo'] == '1602':
-                    print("Error: Token no válido. Notifica al administrador.")
-                    mostrar_mensaje_confirmacion("Error: Token no válido.")
-                elif response_json['Codigo'] == '1603':
-                    print("Error: Se requiere la matrícula para este comando.")
-                    mostrar_mensaje_confirmacion("Error: Matrícula no proporcionada.")
-                elif response_json['Codigo'] == '1604':
-                    print("Error: La matrícula no se encuentra en el sistema. Verifica la matrícula.")
-                    mostrar_mensaje_confirmacion("Error: Matrícula no encontrada.")
-                elif response_json['Codigo'] == '1605':
-                    print("Error: El espacio no existe. Verifica el ID del espacio.")
-                    mostrar_mensaje_confirmacion("Error: Espacio no encontrado.")
-                elif response_json['Codigo'] == '1608':
-                    print("Error: El espacio ya ha sido iniciado anteriormente.")
-                    mostrar_mensaje_confirmacion("Error: El espacio ya ha sido iniciado.")
-                elif response_json['Codigo'] == '1609':
-                    print("Error: El alumno ya ha inicializado un espacio y sigue activo.")
-                    mostrar_mensaje_confirmacion("Error: El alumno ya tiene un espacio activo.")
+                    asyncio.run(monitor.consultar_estado_todas_mesas())
                 else:
                     print(f"Error desconocido: {response_json['Codigo']}")
                     mostrar_mensaje_confirmacion(f"Error desconocido: {response_json['Codigo']}")
-            elif response.status_code == 401:
-                print("Token inválido o expirado.")
-                mostrar_mensaje_confirmacion("Error: Token inválido, notifica al administrador.")            
             else:
                 print(f"Error en la API: {response.status_code} - {response.text}")
                 mostrar_mensaje_confirmacion(f"Error al ocupar la mesa {button_id}")
@@ -413,57 +342,28 @@ def main(page: ft.Page):
             print(f"Error enviando el payload a la API: {e}")
             mostrar_mensaje_confirmacion(f"Error en la solicitud API para mesa {button_id}")
         
-        # Una vez que la API responde, marcamos que la acción ha finalizado
         accion_en_progreso[button_id] = False
 
-
-    # Función para finalizar la mesa usando la API
     def finalizar_mesa(tarjeta_alumno, button_id):
         global accion_en_progreso
         print(f"Finalizando mesa {button_id} con TarjetaAlumno: {tarjeta_alumno}")
         
-        # Marcamos que la acción está en progreso para esta mesa
         accion_en_progreso[button_id] = True
 
-        # Genera el payload usando la función finalizarMesaApi
         payload = payloadsApi.finalizarMesaApi(TokenApi, tarjeta_alumno, button_id)
         print(f"Payload generado: {payload}")
         
-        # Enviar el payload a la API
         try:
             response = requests.post(urlApi, json=payload, headers=payloadsApi.headers)
             if response.status_code == 200:
                 response_json = response.json()
-                # Verifica el código devuelto en la respuesta JSON
                 if response_json['Codigo'] == '1':
                     print(f"API ha confirmado que la mesa {button_id} se ha finalizado correctamente.")
                     mostrar_mensaje_confirmacion(f"Mesa {button_id} desocupada correctamente")
-                    
-                    # Aquí llamamos al monitor para que vuelva a consultar el estado real de todas las mesas
-                    asyncio.run(monitor.consultar_estado_todas_mesas())  # Llamada a la función para consultar todas las mesas
-                elif response_json['Codigo'] == '1601':
-                    print("Error: Parámetros no válidos. Revisa los datos enviados.")
-                    mostrar_mensaje_confirmacion("Error: Parámetros no válidos.")
-                elif response_json['Codigo'] == '1602':
-                    print("Error: Token no válido. Notifica al administrador.")
-                    mostrar_mensaje_confirmacion("Error: Token no válido.")
-                elif response_json['Codigo'] == '1603':
-                    print("Error: Se requiere la matrícula para este comando.")
-                    mostrar_mensaje_confirmacion("Error: Matrícula no proporcionada.")
-                elif response_json['Codigo'] == '1604':
-                    print("Error: La matrícula no se encuentra en el sistema. Verifica la matrícula.")
-                elif response_json['Codigo'] == '1620':
-                    print("Error: El espacio no se encuentra inicializado y no puede finalizar.")
-                    mostrar_mensaje_confirmacion("Error: El espacio no ha sido iniciado.")
-                elif response_json['Codigo'] == '1621':
-                    print("Error: El espacio a finalizar no corresponde al usuario.")
-                    mostrar_mensaje_confirmacion("Error: El espacio no corresponde a tu usuario.")
+                    asyncio.run(monitor.consultar_estado_todas_mesas())
                 else:
                     print(f"Error desconocido: {response_json['Codigo']}")
                     mostrar_mensaje_confirmacion(f"Error desconocido: {response_json['Codigo']}")
-            elif response.status_code == 401:
-                print("Token inválido o expirado. Verifica las credenciales.")
-                mostrar_mensaje_confirmacion("Error: Token inválido o expirado.")
             else:
                 print(f"Error en la API: {response.status_code} - {response.text}")
                 mostrar_mensaje_confirmacion(f"Error al desocupar la mesa {button_id}")
@@ -471,10 +371,8 @@ def main(page: ft.Page):
             print(f"Error enviando el payload a la API: {e}")
             mostrar_mensaje_confirmacion(f"Error en la solicitud API para mesa {button_id}")
         
-        # Una vez que la API responde, marcamos que la acción ha finalizado
         accion_en_progreso[button_id] = False
 
-    # Crear filas de botones
     def crear_fila_botones(start_id, cantidad):
         fila_botones = []
         for i in range(start_id, start_id + cantidad):
@@ -483,17 +381,15 @@ def main(page: ft.Page):
             fila_botones.append(boton)
         return ft.Row(controls=fila_botones, alignment=ft.MainAxisAlignment.END)
 
-    # Añadir botones y UI
     page.add(
         ft.SafeArea(
             ft.Row([
-
                 ft.Container(
                     content=ft.Column(
                         controls=[
-                            crear_fila_botones(1, 3),  # Primera fila de botones
-                            crear_fila_botones(4, 4),  # Segunda fila de botones
-                            crear_fila_botones(8, 5),  # Tercera fila de botones
+                            crear_fila_botones(1, 3),
+                            crear_fila_botones(4, 4),
+                            crear_fila_botones(8, 5),
                         ],
                         alignment=ft.MainAxisAlignment.END,
                     ),
@@ -521,18 +417,14 @@ def main(page: ft.Page):
         )
     )
 
-    page.update()  # Actualizar la página para agregar los botones antes del monitor
+    page.update()
 
-    # Crear monitor de mesas
     monitor = MonitorMesa(num_mesas, update_ui, control_mesa)
 
-    # Aquí usamos asyncio.run para ejecutar el monitor de mesas
     def iniciar_monitor():
         asyncio.run(monitor.monitor_estado_mesas())
 
-    # Usar un hilo separado para iniciar el bucle asyncio sin bloquear la UI
-    import threading
     threading.Thread(target=iniciar_monitor, daemon=True).start()
+    atexit.register(close_resources)
 
-# Ejecutar la app
 ft.app(target=main)
