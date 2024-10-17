@@ -21,7 +21,7 @@ accion_en_progreso = {}  # Diccionario para las mesas en acción
 stop_event = None  # Variable para detener el hilo de la cámara
 
 # Configura el puerto serial y la velocidad del puerto al inicio del programa
-arduino = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+arduino = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
 time.sleep(2)  # Espera para que se establezca la conexión y el Arduino se reinicie
 
 def main(page: ft.Page):
@@ -177,9 +177,13 @@ def main(page: ft.Page):
         if current_button_id is None:
             print("Error: button_id es None, no se puede continuar.")
             return
+        estado_actual = monitor.obtener_estado_mesa(current_button_id)
         
         print(f"QR escaneado con matrícula: {matricula} para mesa {current_button_id}")
-        iniciar_mesa(matricula, current_button_id)  # Usamos el QR como TarjetaAlumno
+        if not estado_actual:
+            iniciar_mesa(tarjeta_alumno, button_id)
+        else:
+            finalizar_mesa(tarjeta_alumno, button_id)
         close_dlg()  # Cerrar el modal tras el escaneo
 
     def scan_qr(update_image, process_qr_code, page, stop_event):
