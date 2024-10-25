@@ -1,5 +1,9 @@
 import flet as ft
 import asyncio
+import serial
+
+# Configuración del puerto serial (ajusta 'COM3' o '/dev/ttyUSB0' según tu puerto y plataforma)
+arduino = serial.Serial('COM3', 9600, timeout=1)
 
 def main(page: ft.Page):
     # Configuraciones generales
@@ -63,6 +67,14 @@ def main(page: ft.Page):
         page.update()
         asyncio.run(cerrar_popup())  # Cierra el popup después de 2 segundos
 
+    # Función para enviar la letra 'F' por el puerto serial al Arduino
+    def enviar_a_arduino():
+        try:
+            arduino.write(b'F')  # Envía la letra 'F' por serial
+            print("Enviado 'F' al Arduino")
+        except serial.SerialException as e:
+            print(f"Error de comunicación con Arduino: {e}")
+
     # Función para agregar dígitos al campo
     def agregar_numero(e):
         campo_clave.value += e.control.data
@@ -77,6 +89,7 @@ def main(page: ft.Page):
     def enviar_codigo(e):
         if campo_clave.value == password_correcto:
             mostrar_popup("SISTEMA DESACTIVADO", ft.colors.GREEN)
+            enviar_a_arduino()  # Enviar 'F' al Arduino cuando el password es correcto
         else:
             mostrar_popup("ERROR", ft.colors.RED)
 
