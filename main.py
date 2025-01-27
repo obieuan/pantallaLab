@@ -1,63 +1,84 @@
 import flet as ft
-import asyncio
-import cv2
-import base64
-import requests
-import numpy as np
-import time
-import serial
-import atexit
-from pyzbar.pyzbar import decode, ZBarSymbol
-import threading
-from components.buttonObi import buttonObi
-from components.monitor_mesa import MonitorMesa
+from flet import Column, Container, Page, Row, Text, colors, icons
+from components.secrets import TokenApi, urlApi
 from components.api import payloadsApi
-from components.secrets import TokenApi, urlApi 
+from datetime import datetime
+#from raspberrypi4.lector import lecturaDeTarjeta
+import threading
+import requests
+import json
 
-# Variables globales
-escaneando_qr = False
-monitor_paused = False  # Controlamos si el monitor está en pausa actualizandose
-accion_en_progreso = {}  # Diccionario para las mesas en acción
-stop_event = None  # Variable para detener el hilo de la cámara
-
-# Configura el puerto serial y la velocidad del puerto al inicio del programa
-arduino = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
-time.sleep(2)  # Espera para que se establezca la conexión y el Arduino se reinicie
-
-def main(page: ft.Page):
-    global escaneando_qr, monitor_paused, stop_event
+def main(page: Page):
     page.adaptive = True
     page.window_always_on_top = True
     page.window_width = 1024
     page.window_height = 600
-    page.window_resizable = True
-    page.window_full_screen = True
-
+    page.window_resizable = False
+    page.window_full_screen = False
+    
+    
+    dlg_modal = None
     button_refs = {}
-    splash_screen_visible = True
-    dlg_modal = None  # Modal activo
-    current_button_id = None
+    button_id = None
+    color_ocupado = '#7E0315' #7E0315 = Rojo
+    color_disponible = '#0A3C82'    #0A3C82  = Azul
 
-    # Cerrar recursos cuando se cierra la ventana de la aplicación
-    def on_close(e):
-        close_resources()
-        print("Aplicación cerrada.")
+    page.splash = ft.Container(
+        content=ft.Column([
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Image(
+                            src=f"assets/logosup.png",
+                            width=500,
+                            height=150,
+                            fit=ft.ImageFit.CONTAIN,
+                            border_radius=ft.border_radius.all(10)
+                        ),
+                    ],
+                    alignment = ft.MainAxisAlignment.CENTER,
+                    spacing=20
+                )
+            ),
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.ProgressRing(width=50, height=50),
+                    ],
+                    alignment = ft.MainAxisAlignment.CENTER,
+                    spacing=20
+                )
+            ),
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Image(
+                            src=f"assets/logo_eium.png",
+                            width=150,
+                            height=150,
+                            fit=ft.ImageFit.CONTAIN,
+                            border_radius=ft.border_radius.all(10)
+                        ),
+                    ],
+                    alignment = ft.MainAxisAlignment.CENTER,
+                    spacing=20
+                )
+            ),
 
-    page.on_window_close = on_close
-
-    def hide_splash():
-        nonlocal splash_screen_visible
-        splash_screen_visible = False
-        page.splash = None        
-        page.update()
-
+        ],
+        alignment = ft.MainAxisAlignment.CENTER,),
+        alignment = ft.alignment.center
+    )
+    page.update()
+    
     page.appbar = ft.AppBar(
-        title=ft.Text("Mesas de trabajo")
+        title=ft.Text("Mesas de trabajo"),
+        bgcolor=colors.with_opacity(0.1, ft.cupertino_colors.SYSTEM_BACKGROUND),
     )
     page.navigation_bar = ft.NavigationBar(
         destinations=[
             ft.NavigationDestination(icon=ft.icons.TABLE_RESTAURANT, label="Espacios"),
-            ft.NavigationDestination(icon=ft.icons.CALENDAR_MONTH_OUTLINED, label="Calendario"),
+            ft.NavigationDestination(icon=ft.icons.CALENDAR_MONTH_OUTLINED, label="Calendario"),            
             ft.NavigationDestination(
                 icon=ft.icons.BOOKMARK_BORDER,
                 selected_icon=ft.icons.BOOKMARK,
@@ -67,323 +88,307 @@ def main(page: ft.Page):
         border=ft.Border(
             top=ft.BorderSide(color='#052147', width=0)
         ),
-        bgcolor='#1EF50A',
+        bgcolor = '#1EF50A',
         on_change=print("hola")
+        #overlay_color ="#1EF50A2",
     )
 
-    # Función para actualizar la UI cuando se reciben los estados de las mesas
-    def update_ui(mesa_id, estado):
-        print(f"Actualizando UI para mesa {mesa_id} con estado {estado}")
-        if mesa_id in button_refs:
-            # Cambiar el color del botón en función del estado
-            if estado == 1:  # Mesa ocupada
-                button_refs[mesa_id].bgcolor = '#7E0315'  # Rojo para ocupado
-                button_refs[mesa_id].content.controls[1].value = "Ocupado"  
-            else:  # Mesa disponible
-                button_refs[mesa_id].bgcolor = '#0A3C82'  # Azul para disponible
-                button_refs[mesa_id].content.controls[1].value = "Disponible"   
-            
-            button_refs[mesa_id].update()
+    print("Creando lista de usuarios vacía...")
+    # Crear lista vacía y sobrescribir el archivo existente
+    global usuarios_activos
+    usuarios_activos = []
+    with open('components/usuarios_activos.json', 'w') as archivo:
+        json.dump(usuarios_activos, archivo)
+    print("Lista de usuarios reiniciada")
 
-        if splash_screen_visible and mesa_id == num_mesas:
-            hide_splash()
 
-    def crear_teclado_numerico(campo_clave, page):
-        ancho = 100
-        alto = 30
+    def estado_ocupado(button_id):
+        estado = ft.Column([ft.Text(value=f"Mesa {button_id}", size=15, color=ft.colors.WHITE),
+                                ft.Text(value=f"Ocupado", size=10, color=ft.colors.WHITE),],alignment=ft.MainAxisAlignment.CENTER,)
+        return estado
 
-        def agregar_numero(e):
-            campo_clave.value += e.control.data
-            campo_clave.update()
-
-        def retroceder(e):
-            campo_clave.value = campo_clave.value[:-1]
-            campo_clave.update()
-
-        fila1 = ft.Row(
-            controls=[
-                ft.ElevatedButton(text="1", data="1", on_click=agregar_numero, width=ancho, height=alto),
-                ft.ElevatedButton(text="2", data="2", on_click=agregar_numero, width=ancho, height=alto),
-                ft.ElevatedButton(text="3", data="3", on_click=agregar_numero, width=ancho, height=alto)
-            ],
-            alignment=ft.MainAxisAlignment.CENTER
-        )
-        fila2 = ft.Row(
-            controls=[
-                ft.ElevatedButton(text="4", data="4", on_click=agregar_numero, width=ancho, height=alto),
-                ft.ElevatedButton(text="5", data="5", on_click=agregar_numero, width=ancho, height=alto),
-                ft.ElevatedButton(text="6", data="6", on_click=agregar_numero, width=ancho, height=alto)
-            ],
-            alignment=ft.MainAxisAlignment.CENTER
-        )
-        fila3 = ft.Row(
-            controls=[
-                ft.ElevatedButton(text="7", data="7", on_click=agregar_numero, width=ancho, height=alto),
-                ft.ElevatedButton(text="8", data="8", on_click=agregar_numero, width=ancho, height=alto),
-                ft.ElevatedButton(text="9", data="9", on_click=agregar_numero, width=ancho, height=alto)
-            ],
-            alignment=ft.MainAxisAlignment.CENTER
-        )
-        fila4 = ft.Row(
-            controls=[
-                ft.ElevatedButton(text="0", data="0", on_click=agregar_numero, width=ancho*2, height=alto),
-                ft.ElevatedButton(text="⌫", on_click=retroceder, width=ancho, height=alto),
-            ],
-            alignment=ft.MainAxisAlignment.CENTER
-        )
-
-        teclado = ft.Column(
-            controls=[fila1, fila2, fila3, fila4],
-            alignment=ft.MainAxisAlignment.CENTER
-        )
-
-        return teclado
-
-    def control_mesa(mesas):
-        print(f"Data: {mesas}")
-        # Aquí controlamos la energia de las mesas
+    def estado_disponible(button_id):
+        estado = ft.Column([ft.Text(value=f"Mesa {button_id}", size=15, color=ft.colors.WHITE),
+                                ft.Text(value=f"Disponible", size=10, color=ft.colors.WHITE),],alignment=ft.MainAxisAlignment.CENTER,)
+        return estado
+    
+    def cargar_usuarios_activos():
+        global usuarios_activos
         try:
-            arduino.write(mesas.encode())
-            respuesta = arduino.readline().decode().strip()
-            print(f"Respuesta del Arduino: {respuesta}")
+            with open('components/usuarios_activos.json', 'r') as archivo:
+                usuarios_activos = json.load(archivo)
+        except FileNotFoundError:
+            usuarios_activos = []
 
-        except serial.SerialException as e:
-            print(f"Error de comunicación con el puerto serial: {e}")
-        except Exception as e:
-            print(f"Ha ocurrido un error: {e}")
+    def guardar_usuario_activo(mesa_id,user_id,FechaHora_Inicio,Estado):
+        global usuarios_activos
+        if not mesa_id or not user_id or not FechaHora_Inicio:
+            raise ValueError("Datos insuficientes para guardar el usuario activo.")
 
+        usuario = {
+            'id': mesa_id,
+            'matricula': user_id,
+            'hora_inicio': FechaHora_Inicio,
+            'estado_mesa': Estado
+        }
+        usuarios_activos.append(usuario)
+        with open('components/usuarios_activos.json', 'w') as archivo:
+            json.dump(usuarios_activos, archivo)
+        cargar_usuarios_activos()
 
-    num_mesas = 14
-    def close_resources():
-        if arduino.is_open:
-            arduino.close()
-            print("Puerto serial cerrado correctamente.")
+    def eliminar_usuario_activo(user_id):
+        global usuarios_activos
+        usuarios_activos = [usuario for usuario in usuarios_activos if usuario["matricula"] != str(user_id)]
+        with open('components/usuarios_activos.json', 'w') as archivo:
+            json.dump(usuarios_activos, archivo)
+        cargar_usuarios_activos()
 
-
-    def on_button_click(e, button_id):
-        print(f"Button {button_id} clicked")
-        abrir_modal_clave(button_id)
-
-    def mostrar_mensaje_confirmacion(mensaje):
-        page.snack_bar = ft.SnackBar(
-            content=ft.Text(mensaje),
-            action="Cerrar",
-        )
-        page.snack_bar.open = True
-        page.update()
-
-    def process_qr_code(matricula, page):
-        global current_button_id
-        if current_button_id is None:
-            print("Error: button_id es None, no se puede continuar.")
-            return
-        estado_actual = monitor.obtener_estado_mesa(current_button_id)
+    def consultar_id(button_id, estadoMesa):
+        # Cierra el diálogo actual
+        close_dlg()
         
-        print(f"QR escaneado con matrícula: {matricula} para mesa {current_button_id}")
-        if not estado_actual:
-            iniciar_mesa(tarjeta_alumno, button_id)
-        else:
-            finalizar_mesa(tarjeta_alumno, button_id)
-        close_dlg()  # Cerrar el modal tras el escaneo
-
-    def scan_qr(update_image, process_qr_code, page, stop_event):
-        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)   # Para raspberry pi
-
-        try:
-            while not stop_event.is_set():
-                ret, frame = cap.read()
-                if not ret:
-                    continue
-
-                decoded_objects = decode(frame, symbols=[ZBarSymbol.QRCODE])
-
-                for obj in decoded_objects:
-                    matricula = obj.data.decode("utf-8")
-                    process_qr_code(matricula, page)
-                    stop_event.set()
-
-                _, img_encoded = cv2.imencode('.jpg', frame)
-                img_bytes = img_encoded.tobytes()
-
-                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                update_image(img_base64)
-
-        finally:
-            if cap.isOpened():
-                cap.release()
-            cv2.destroyAllWindows()
-
-    def abrir_modal_clave(button_id):
-        global escaneando_qr, monitor_paused, current_button_id, stop_event   
-        nonlocal dlg_modal
-
-        if monitor_paused:
-            return  # Evitar abrir más modales mientras hay uno abierto
-
-        monitor_paused = True  # Pausar el monitoreo de las mesas
-        escaneando_qr = True  # Indicar que estamos escaneando QR
-        current_button_id = button_id
-        estado_actual = monitor.obtener_estado_mesa(button_id)
-        
-        def confirmar_clave(e):
-            tarjeta_alumno = campo_clave.value
-            if tarjeta_alumno.isdigit():
-                print(f"Clave ingresada: {tarjeta_alumno}")
-                if not estado_actual:
-                    iniciar_mesa(tarjeta_alumno, button_id)
-                else:
-                    finalizar_mesa(tarjeta_alumno, button_id)
-                close_dlg()   
-            else:
-                error_text.value = "Por favor, ingrese una clave válida."
-                page.update()
-
-        campo_clave = ft.TextField(label="Opción 2: Ingresa tu matrícula", password=False, border="underline", filled=True, keyboard_type=ft.KeyboardType.NUMBER)
-        sub_text = ft.Text("Opción 1: muestre su QR", color=ft.colors.RED)
-
-        camera_text = ft.Text("Iniciando cámara...", size=20)
-        camera_image = ft.Image(width=200, height=200)
-
-        teclado_numerico = crear_teclado_numerico(campo_clave, page)
-
-        if estado_actual:
-            titulo = f"Desbloquear Mesa {button_id}"
-        else:
-            titulo = f"Solicitar Mesa {button_id}"
-
-        def update_image(img_base64):
-            if dlg_modal.content.controls[0].content.controls[1] == camera_text:
-                dlg_modal.content.controls[0].content.controls[1] = camera_image
-            camera_image.src_base64 = img_base64
-            page.update()
-
-        dlg_modal = ft.AlertDialog(
-            modal=True,
-            title=ft.Text(titulo),
-            content=ft.Row([
-                ft.Container(
-                    content=ft.Column(
-                        controls=[sub_text, camera_text],
-                        alignment=ft.MainAxisAlignment.CENTER,
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    bgcolor=ft.colors.SURFACE_VARIANT,
-                    border_radius=20,
-                    padding=20,
-                    height=300,
-                    width=300,
-                ),                
-                ft.Container(
-                    content=ft.Column(
-                        controls=[campo_clave, teclado_numerico],
-                        alignment=ft.MainAxisAlignment.CENTER,
-                    ),
-                    bgcolor=ft.colors.SURFACE_VARIANT,
-                    border_radius=20,
-                    padding=20,
-                    height=300,
-                    width=400,
-                )                
-            ]),
-            actions=[
-                ft.TextButton("Confirmar", on_click=confirmar_clave),
-                ft.TextButton("Cancelar", on_click=close_dlg)
-            ],
-            actions_alignment=ft.MainAxisAlignment.END
-        )
-
-        open_dlg_modal()
-
-        stop_event = threading.Event()
-        threading.Thread(target=scan_qr, args=(update_image, process_qr_code, page, stop_event), daemon=True).start()
+        solicitarEscanear(button_id, estadoMesa)        
+        print("Button ID:", button_id)
 
     def close_dlg(e=None):
-        global escaneando_qr, monitor_paused, stop_event
-        nonlocal dlg_modal
         if dlg_modal is not None:
             dlg_modal.open = False
-            escaneando_qr = False
-            monitor_paused = False
-            
-            if stop_event is not None:
-                stop_event.set()
-
-            import time
-            time.sleep(0.5)
-            stop_event = None
             page.update()
 
-    def open_dlg_modal(e=None):
-        nonlocal dlg_modal
+    def open_dlg_modal(e):
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
+
+    def solicitudMesa(button_id, estadoMesa):
+        nonlocal dlg_modal
+        dlg_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Ocupar mesa {button_id}",size=30,text_align=ft.TextAlign.CENTER),
+            icon = ft.Icon(name=ft.icons.TABLE_RESTAURANT, color=ft.colors.GREEN_400, size=40),
+            content=ft.Text("¿Confirmar acción?",size=25,text_align=ft.TextAlign.CENTER),
+            actions=[
+                ft.IconButton(icon=ft.icons.CHECK_CIRCLE,
+                    icon_color=ft.colors.GREEN_400,
+                    icon_size=50,
+                    tooltip="Aceptar",
+                    on_click=lambda e: consultar_id(button_id, estadoMesa)),
+                ft.IconButton(icon=ft.icons.CANCEL,
+                    icon_color=ft.colors.RED_400,
+                    icon_size=50,
+                    tooltip="Cancelar",
+                    on_click=close_dlg)
+            ],
+            actions_alignment=ft.MainAxisAlignment.CENTER,
+            on_dismiss=lambda e: print("Acción cancelada"),
+        )
+        return dlg_modal
+
+    def desocuparMesa(button_id, estadoMesa):
+        nonlocal dlg_modal
+        dlg_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Desocupar mesa {button_id}",size=30,text_align=ft.TextAlign.CENTER),
+            icon = ft.Icon(name=ft.icons.TABLE_RESTAURANT, color=ft.colors.GREEN_400, size=40),
+            content=ft.Text("¿Confirmar acción?",size=25,text_align=ft.TextAlign.CENTER),
+            actions=[
+                ft.IconButton(icon=ft.icons.CHECK_CIRCLE,
+                    icon_color=ft.colors.GREEN_400,
+                    icon_size=50,
+                    tooltip="Aceptar",
+                    on_click=lambda e: consultar_id(button_id, estadoMesa)),
+                ft.IconButton(icon=ft.icons.CANCEL,
+                    icon_color=ft.colors.RED_400,
+                    icon_size=50,
+                    tooltip="Cancelar",
+                    on_click=close_dlg)
+            ],
+            actions_alignment=ft.MainAxisAlignment.CENTER,
+            on_dismiss=lambda e: print("Acción cancelada"),
+        )
+        return dlg_modal
     
-    def iniciar_mesa(tarjeta_alumno, button_id):
-        global accion_en_progreso
-        print(f"Iniciando mesa {button_id} con TarjetaAlumno: {tarjeta_alumno}")
-        
-        accion_en_progreso[button_id] = True
+    def solicitarEscanear(button_id, estadoMesa):
+        nonlocal dlg_modal
+        dlg_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Por favor acerque su credencial al lector", size=25, text_align=ft.TextAlign.CENTER),
+            icon=ft.Icon(name=ft.icons.SIGNAL_WIFI_4_BAR, color=ft.colors.GREEN_400, size=40),
+            content=ft.Text("Esperando lectura...", size=25, text_align=ft.TextAlign.CENTER),
+            actions=[
+                ft.IconButton(icon=ft.icons.CANCEL,
+                            icon_color=ft.colors.RED_400,
+                            icon_size=50,
+                            tooltip="Cancelar",
+                            on_click=close_dlg)
+            ],
+            actions_alignment=ft.MainAxisAlignment.CENTER,
+            on_dismiss=lambda e: print("Acción cancelada"),
+        )
+        page.dialog = dlg_modal
+        dlg_modal.open = True
+        page.update()
+        threading.Timer(1, check_rfid_response, args=[button_id,estadoMesa]).start()   
+    
+    def comprobar_usuario_activo(user_id):
+        # Verificar si el id ya está activo en la lista de diccionarios
+        global usuarios_activos
+        for usuario in usuarios_activos:
+            if str(usuario['matricula']) == user_id:
+                raise ValueError("Ya tienes una mesa activa")
+    
+    def comprobar_mesa_activa(button_id):
+        # Verificar si el id ya está activo en la lista de diccionarios
+        global usuarios_activos
+        for mesa in usuarios_activos:
+            if str(mesa['id']) == str(button_id):
+                return mesa['estado_mesa']
+    
+    def comprobar_vinculacion_mesa(button_id, response_data, rfid_data, user_id):
+        global usuarios_activos
+        cargar_usuarios_activos()
+        print(user_id)        
+        encontrado = False
 
-        payload = payloadsApi.iniciarMesaApi(TokenApi, tarjeta_alumno, button_id)
-        print(f"Payload generado: {payload}")
-        
+        for mesa in usuarios_activos:
+            if str(mesa['id']) == str(button_id) and mesa['matricula'] == str(user_id):
+                encontrado = True
+                response = requests.post(urlApi,json=payloadsApi.finalizarMesaApi(TokenApi,rfid_data, button_id))
+                if response.status_code == 200:
+                    response_data = response.json()
+                    print(response_data)
+                    if response_data['Codigo'] == '1':                           
+                        dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
+                        dlg_modal.content = ft.Text(f"{response_data['Mensaje']}", size=25, text_align=ft.TextAlign.CENTER)
+                        eliminar_usuario_activo(str(user_id))
+                        if button_id in button_refs:
+                            button_refs[button_id].bgcolor = color_disponible  # Cambia a azul                            
+                            button_refs[button_id].content = estado_disponible(button_id)
+                            page.update()
+                        return                        
+                    raise ValueError((f"{response_data['Mensaje']}"))         
+        if not encontrado:
+            print("No te corresponde esa mesa") 
+            raise ValueError("No te corresponde esa mesa")
+
+    def check_rfid_response(button_id,estadoMesa):
+        rfid_data = 15136485        
+        global usuarios_activos
+        cargar_usuarios_activos()
         try:
-            response = requests.post(urlApi, json=payload, headers=payloadsApi.headers)
+            # Intenta leer el RFID
+            #rfid_data = lecturaDeTarjeta()  # Simula la lectura del RFID                     
+            print(usuarios_activos)
+            dlg_modal.title=ft.Text(f"Leido", size=25, text_align=ft.TextAlign.CENTER)
+            dlg_modal.content = ft.Text(f"Consultando {str(rfid_data)}", size=25, text_align=ft.TextAlign.CENTER)
+            page.update()
+            response = requests.post(urlApi,json=payloadsApi.informacionUsuarioApi(TokenApi,rfid_data,button_id))
+                       
             if response.status_code == 200:
-                response_json = response.json()
-                if response_json['Codigo'] == '1':
-                    print(f"API ha confirmado que la mesa {button_id} se ha ocupado correctamente.")
-                    mostrar_mensaje_confirmacion(f"Mesa {button_id} iniciada correctamente")
-                    asyncio.run(monitor.consultar_estado_todas_mesas())
+                response_data = response.json()
+                user_id = str(response_data['id']) 
+                print(response_data)
+                if estadoMesa is not None:                    
+                    comprobar_vinculacion_mesa(button_id, response_data, rfid_data, user_id) #reviso si es dueño de la mesa                
+                    return
+                comprobar_usuario_activo(user_id)  #reviso si ya tiene mesa activa                
+                if rfid_data:
+                    #print(rfid_data)
+                    url = urlApi                
+                    response = requests.post(urlApi, json=payloadsApi.iniciarMesaApi(TokenApi,rfid_data,button_id), headers=payloadsApi.headers)
+                    
+                    if response.status_code == 200:
+                        # Procesa la respuesta de la API
+                        response_data = response.json()
+                        print(response_data)
+                        
+                        if response_data['Codigo'] == '1':
+                            # actualizo la interfaz dependiendo de la respuesta
+                            print("autorizado")
+                            dlg_modal.title=ft.Text(f"Acceso autorizado:", size=25, text_align=ft.TextAlign.CENTER)
+                            dlg_modal.content = ft.Text(f"{response_data['Mensaje']}", size=25, text_align=ft.TextAlign.CENTER)
+                            FechaHora_Inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            guardar_usuario_activo(button_id, user_id, FechaHora_Inicio, 1)  #mesa_id,user_id,FechaHora_Inicio,Estado
+                            if button_id in button_refs:
+                                button_refs[button_id].bgcolor = color_ocupado  # Cambia a rojo para mostrar ocupado                            
+                                button_refs[button_id].content = estado_ocupado(button_id)
+                                page.update()                        
+                        if response_data['Codigo'] == '0':
+                            print("denegado")
+                            dlg_modal.title=ft.Text(f"Acceso denegado:", size=25, text_align=ft.TextAlign.CENTER)
+                            dlg_modal.content = ft.Text(f"{response_data['Mensaje']}", size=25, text_align=ft.TextAlign.CENTER)
+                    else:
+                        dlg_modal.content = ft.Text("Error en la respuesta de la API", size=25, text_align=ft.TextAlign.CENTER)
                 else:
-                    print(f"Error desconocido: {response_json['Codigo']}")
-                    mostrar_mensaje_confirmacion(f"Error desconocido: {response_json['Codigo']}")
-            else:
-                print(f"Error en la API: {response.status_code} - {response.text}")
-                mostrar_mensaje_confirmacion(f"Error al ocupar la mesa {button_id}")
+                    raise ValueError("No se recibió dato de RFID")
         except Exception as e:
-            print(f"Error enviando el payload a la API: {e}")
-            mostrar_mensaje_confirmacion(f"Error en la solicitud API para mesa {button_id}")
-        
-        accion_en_progreso[button_id] = False
+            dlg_modal.content = ft.Text(str(e), size=25, text_align=ft.TextAlign.CENTER)
+        finally:
+            page.update()
+            threading.Timer(2, close_dlg).start()
+    
 
-    def finalizar_mesa(tarjeta_alumno, button_id):
-        global accion_en_progreso
-        print(f"Finalizando mesa {button_id} con TarjetaAlumno: {tarjeta_alumno}")
-        
-        accion_en_progreso[button_id] = True
+    def handle_button_click(e, button_id):        
+        print(f"Button {button_id} was pressed")
+        #aqui elijo si la mesa está ocupada o desocupada
+        estadoMesa = comprobar_mesa_activa(button_id)
+        print(estadoMesa)
+        if estadoMesa is not None:
+            dlg_modal = desocuparMesa(button_id, estadoMesa)
+        else:
+            dlg_modal = solicitudMesa(button_id, estadoMesa)
+        page.dialog = dlg_modal
+        dlg_modal.open = True
+        page.update()
 
-        payload = payloadsApi.finalizarMesaApi(TokenApi, tarjeta_alumno, button_id)
-        print(f"Payload generado: {payload}")
-        
-        try:
-            response = requests.post(urlApi, json=payload, headers=payloadsApi.headers)
-            if response.status_code == 200:
-                response_json = response.json()
-                if response_json['Codigo'] == '1':
-                    print(f"API ha confirmado que la mesa {button_id} se ha finalizado correctamente.")
-                    mostrar_mensaje_confirmacion(f"Mesa {button_id} desocupada correctamente")
-                    asyncio.run(monitor.consultar_estado_todas_mesas())
-                else:
-                    print(f"Error desconocido: {response_json['Codigo']}")
-                    mostrar_mensaje_confirmacion(f"Error desconocido: {response_json['Codigo']}")
+    def EspacioButton(button_id, texto, subtexto, on_click):
+        button_id = button_id
+        url = urlApi
+        bgcolor = ''
+        response = requests.post(url, json=payloadsApi.informacionApi(TokenApi,button_id), headers=payloadsApi.headers)        
+
+        if response.status_code == 200:
+            # Procesa la respuesta de la API
+            response_data = response.json()
+            print(response_data)
+            
+            if response_data['Estado'] == 0:
+                bgcolor = color_disponible
+                estado = estado_disponible(button_id)
             else:
-                print(f"Error en la API: {response.status_code} - {response.text}")
-                mostrar_mensaje_confirmacion(f"Error al desocupar la mesa {button_id}")
-        except Exception as e:
-            print(f"Error enviando el payload a la API: {e}")
-            mostrar_mensaje_confirmacion(f"Error en la solicitud API para mesa {button_id}")
-        
-        accion_en_progreso[button_id] = False
+                bgcolor = color_ocupado
+                estado = estado_ocupado(button_id)
+            if response_data['user_id'] is not None:
+                mesa_id = response_data['id']
+                user_id = response_data['user_id']
+                FechaHora_Inicio = response_data['FechaHora_Inicio']
+                Estado = response_data['Estado']
+                guardar_usuario_activo(mesa_id,user_id,FechaHora_Inicio,Estado)
 
-    def crear_fila_botones(start_id, cantidad):
-        fila_botones = []
-        for i in range(start_id, start_id + cantidad):
-            boton = buttonObi(button_id=i, on_click=on_button_click).obtener_boton()
-            button_refs[i] = boton
-            fila_botones.append(boton)
-        return ft.Row(controls=fila_botones, alignment=ft.MainAxisAlignment.END)
+
+        btn = ft.Container(
+            content=estado,
+            alignment=ft.alignment.center,
+            bgcolor=bgcolor,  # Color inicial
+            height=115,
+            width=135,
+            border_radius=10,
+            ink=True,
+            on_click=lambda e: on_click(e, button_id),
+        )
+        button_refs[button_id] = btn  # Guardar referencia
+        return btn
+
+    def createRowOfButtons(buttons, start_id=1):
+        return ft.Row(
+            controls=[
+                EspacioButton(button_id, text, status, lambda e, button_id=button_id: handle_button_click(e, button_id))
+                for button_id, (text, status) in enumerate(buttons, start=start_id)
+            ],
+            alignment=ft.MainAxisAlignment.END
+        )
+
+
 
     page.add(
         ft.SafeArea(
@@ -391,9 +396,9 @@ def main(page: ft.Page):
                 ft.Container(
                     content=ft.Column(
                         controls=[
-                            crear_fila_botones(1, 3),
-                            crear_fila_botones(4, 4),
-                            crear_fila_botones(8, 5),
+                            createRowOfButtons([("Mesa 1", "Disponible"), ("Mesa 2", "Disponible"), ("Mesa 3", "Disponible")], start_id=1),
+                            createRowOfButtons([("Mesa 4", "Disponible"), ("Mesa 5", "Disponible"), ("Mesa 6", "Disponible"), ("Mesa 7", "Disponible")], start_id=4),
+                            createRowOfButtons([("Mesa 8", "Disponible"), ("Mesa 9", "Disponible"), ("Mesa 10", "Disponible"), ("Mesa 11", "Disponible"), ("Mesa 12", "Disponible")], start_id=8),
                         ],
                         alignment=ft.MainAxisAlignment.END,
                     ),
@@ -406,8 +411,13 @@ def main(page: ft.Page):
                 ft.Container(
                     content=ft.Column(
                         controls=[
-                            buttonObi(button_id=13, on_click=on_button_click).obtener_boton(),
-                            buttonObi(button_id=14, on_click=on_button_click).obtener_boton()
+                            ft.Column(
+                                controls=[
+                                    EspacioButton(13, "Soldadura 1", "Disponible", handle_button_click),
+                                    EspacioButton(14, "Soldadura 2", "Disponible", handle_button_click),
+                                ],
+                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            )
                         ],
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
@@ -420,15 +430,7 @@ def main(page: ft.Page):
             ]),
         )
     )
-
+    page.splash = None    
     page.update()
-
-    monitor = MonitorMesa(num_mesas, update_ui, control_mesa)
-
-    def iniciar_monitor():
-        asyncio.run(monitor.monitor_estado_mesas())
-
-    threading.Thread(target=iniciar_monitor, daemon=True).start()
-    atexit.register(close_resources)
 
 ft.app(target=main)
