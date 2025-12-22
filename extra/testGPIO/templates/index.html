@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GPIO Tester - EIUM</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+            user-select: none;
+            width: 1024px;
+            height: 600px;
+        }
+
+        .container {
+            width: 1024px;
+            height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        h1 {
+            color: white;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .status {
+            color: white;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 15px;
+            border-radius: 20px;
+        }
+
+        .status.online {
+            background: rgba(76, 175, 80, 0.3);
+        }
+
+        .main {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .grid-container {
+            display: flex;
+            gap: 20px;
+            height: 100%;
+        }
+
+        .grid-main {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .grid-side {
+            width: 205px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .row {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .mesa {
+            width: 135px;
+            height: 115px;
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mesa::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0);
+            transition: background 0.2s;
+        }
+
+        .mesa:active::before {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .mesa.off {
+            background: #666;
+        }
+
+        .mesa.on {
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(76, 175, 80, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(76, 175, 80, 0.8); }
+        }
+
+        .mesa:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .mesa:active {
+            transform: translateY(-1px);
+        }
+
+        .mesa-nombre {
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .mesa-estado {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .mesa-pin {
+            font-size: 11px;
+            opacity: 0.7;
+            margin-top: 3px;
+        }
+
+        .section-title {
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .btn-emergency {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 10px;
+            width: 100%;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+        }
+
+        .btn-emergency:active {
+            transform: scale(0.95);
+        }
+
+        .toast {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s;
+            z-index: 2000;
+            max-width: 350px;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            border-left: 5px solid #4CAF50;
+            color: #4CAF50;
+        }
+
+        .toast.error {
+            border-left: 5px solid #f44336;
+            color: #f44336;
+        }
+
+        .info-box {
+            background: rgba(0, 0, 0, 0.2);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>⚡ GPIO Tester - Prueba de Relés</h1>
+            <div class="status" id="status">
+                <span id="gpio-status">Cargando...</span>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div class="main">
+            <div class="grid-container">
+                <!-- Mesas principales -->
+                <div class="grid-main">
+                    <div class="row">
+                        <div class="mesa off" data-mesa="1" onclick="toggle(1)">
+                            <div class="mesa-nombre">Mesa 1</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 2</div>
+                        </div>
+                        <div class="mesa off" data-mesa="2" onclick="toggle(2)">
+                            <div class="mesa-nombre">Mesa 2</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 3</div>
+                        </div>
+                        <div class="mesa off" data-mesa="3" onclick="toggle(3)">
+                            <div class="mesa-nombre">Mesa 3</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 4</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mesa off" data-mesa="4" onclick="toggle(4)">
+                            <div class="mesa-nombre">Mesa 4</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 17</div>
+                        </div>
+                        <div class="mesa off" data-mesa="5" onclick="toggle(5)">
+                            <div class="mesa-nombre">Mesa 5</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 27</div>
+                        </div>
+                        <div class="mesa off" data-mesa="6" onclick="toggle(6)">
+                            <div class="mesa-nombre">Mesa 6</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 22</div>
+                        </div>
+                        <div class="mesa off" data-mesa="7" onclick="toggle(7)">
+                            <div class="mesa-nombre">Mesa 7</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 10</div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mesa off" data-mesa="8" onclick="toggle(8)">
+                            <div class="mesa-nombre">Mesa 8</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 9</div>
+                        </div>
+                        <div class="mesa off" data-mesa="9" onclick="toggle(9)">
+                            <div class="mesa-nombre">Mesa 9</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 21</div>
+                        </div>
+                        <div class="mesa off" data-mesa="10" onclick="toggle(10)">
+                            <div class="mesa-nombre">Mesa 10</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 20</div>
+                        </div>
+                        <div class="mesa off" data-mesa="11" onclick="toggle(11)">
+                            <div class="mesa-nombre">Mesa 11</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 16</div>
+                        </div>
+                        <div class="mesa off" data-mesa="12" onclick="toggle(12)">
+                            <div class="mesa-nombre">Mesa 12</div>
+                            <div class="mesa-estado">Apagado</div>
+                            <div class="mesa-pin">GPIO 12</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mesas soldadura -->
+                <div class="grid-side">
+                    <div class="section-title">⚡ Soldadura</div>
+                    <div class="mesa off" data-mesa="13" onclick="toggle(13)">
+                        <div class="mesa-nombre">Sold. 1</div>
+                        <div class="mesa-estado">Apagado</div>
+                        <div class="mesa-pin">GPIO 1</div>
+                    </div>
+                    <div class="mesa off" data-mesa="14" onclick="toggle(14)">
+                        <div class="mesa-nombre">Sold. 2</div>
+                        <div class="mesa-estado">Apagado</div>
+                        <div class="mesa-pin">GPIO 7</div>
+                    </div>
+                    <div class="mesa off" data-mesa="15" onclick="toggle(15)">
+                        <div class="mesa-nombre">Mesa 15</div>
+                        <div class="mesa-estado">Apagado</div>
+                        <div class="mesa-pin">GPIO 8</div>
+                    </div>
+                    <div class="mesa off" data-mesa="16" onclick="toggle(16)">
+                        <div class="mesa-nombre">Mesa 16</div>
+                        <div class="mesa-estado">Apagado</div>
+                        <div class="mesa-pin">GPIO 25</div>
+                    </div>
+                    
+                    <button class="btn-emergency" onclick="apagarTodo()">
+                        🚨 APAGAR TODO
+                    </button>
+                    
+                    <div class="info-box">
+                        Click en una mesa para<br>
+                        encender/apagar<br>
+                        <strong>Verifica que prendan<br>los relés físicos</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div id="toast" class="toast"></div>
+    </div>
+
+    <script>
+        const GPIO_MAP = {
+            1: 2,  2: 3,  3: 4,   4: 17,
+            5: 27, 6: 22, 7: 10,  8: 9,
+            9: 21, 10: 20, 11: 16, 12: 12,
+            13: 1, 14: 7, 15: 8,  16: 25
+        };
+
+        // Cargar estados al iniciar
+        async function loadStates() {
+            try {
+                const response = await fetch('/api/estados');
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Actualizar indicador GPIO
+                    const statusEl = document.getElementById('gpio-status');
+                    if (data.gpio_available) {
+                        statusEl.textContent = '✓ GPIO Activo';
+                        statusEl.parentElement.classList.add('online');
+                    } else {
+                        statusEl.textContent = '⚠ Modo Simulación';
+                    }
+                    
+                    // Actualizar estados de mesas
+                    for (let mesa = 1; mesa <= 16; mesa++) {
+                        updateMesaUI(mesa, data.estados[mesa]);
+                    }
+                }
+            } catch (error) {
+                console.error('Error cargando estados:', error);
+                showToast('Error conectando con servidor', 'error');
+            }
+        }
+
+        // Toggle mesa
+        async function toggle(mesaId) {
+            try {
+                const response = await fetch(`/api/toggle/${mesaId}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateMesaUI(mesaId, data.estado);
+                    showToast(data.mensaje, 'success');
+                } else {
+                    showToast(data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Error al controlar mesa', 'error');
+            }
+        }
+
+        // Apagar todo
+        async function apagarTodo() {
+            if (!confirm('¿Apagar TODOS los relés?')) return;
+            
+            try {
+                const response = await fetch('/api/apagar_todo', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    for (let mesa = 1; mesa <= 16; mesa++) {
+                        updateMesaUI(mesa, false);
+                    }
+                    showToast(data.mensaje, 'success');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Error al apagar relés', 'error');
+            }
+        }
+
+        // Actualizar UI de mesa
+        function updateMesaUI(mesaId, estado) {
+            const mesa = document.querySelector(`[data-mesa="${mesaId}"]`);
+            const estadoEl = mesa.querySelector('.mesa-estado');
+            
+            if (estado) {
+                mesa.classList.remove('off');
+                mesa.classList.add('on');
+                estadoEl.textContent = 'Encendido';
+            } else {
+                mesa.classList.remove('on');
+                mesa.classList.add('off');
+                estadoEl.textContent = 'Apagado';
+            }
+        }
+
+        // Mostrar toast
+        function showToast(mensaje, tipo = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = mensaje;
+            toast.className = `toast ${tipo} show`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Cargar al iniciar
+        loadStates();
+        
+        // Recargar estados cada 2 segundos
+        setInterval(loadStates, 2000);
+
+        console.log('🔌 GPIO Tester iniciado');
+        console.log('Mapeo GPIO:', GPIO_MAP);
+    </script>
+</body>
+</html>
