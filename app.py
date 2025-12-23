@@ -1,15 +1,17 @@
 """
 Lab Control MVP - Aplicación Principal
 """
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 import logging
+import cv2
 from datetime import datetime
 
 from config.settings import HOST, PORT, DEBUG, DATABASE_URI, OPERATING_HOURS, OPERATING_DAYS
 from models.database import db, init_db, Mesa, Sesion
 from hardware.gpio_control import relay_controller
 from hardware.qr_scanner import qr_scanner
-from api.laravel_client import laravel_client
+from api.laravel_client import laravel_client 
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -291,6 +293,29 @@ def sincronizar_inicial():
     
     except Exception as e:
         logger.error(f"Error en sincronización inicial: {e}")
+
+def gen_frames(camera_index=0):
+    cap = cv2.VideoCapture(camera_index)
+    if not cap.isOpened():
+        return
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            ret2, buffer = cv2.imencode('.jpg', frame)
+            if not ret2:
+                continue
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+    finally:
+        cap.release()
+
+@app.route('/api/camera_feed')
+def camera_feed():
+    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 
 if __name__ == '__main__':
     try:

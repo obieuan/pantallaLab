@@ -5,6 +5,9 @@ let currentMesa = null;
 let currentAction = null;
 let mesasData = {};
 
+// ===== Preview / Cámara =====
+let qrAutoScanTimer = null;
+
 // ==================== INICIALIZACIÓN ====================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -15,17 +18,44 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(updateClock, 1000);
 });
 
+// ==================== CÁMARA PREVIEW (QR) ====================
+
+function startCameraPreview() {
+    const img = document.getElementById('camera-preview');
+    if (!img) return;
+
+    // Inicia MJPEG stream desde backend
+    img.src = '/api/camera_feed';
+    img.style.display = 'block';
+}
+
+function stopCameraPreview() {
+    const img = document.getElementById('camera-preview');
+    if (!img) return;
+
+    // Detiene MJPEG stream (libera cámara del lado navegador)
+    img.src = '';
+    img.style.display = 'none';
+}
+
+function clearQrAutoScanTimer() {
+    if (qrAutoScanTimer) {
+        clearTimeout(qrAutoScanTimer);
+        qrAutoScanTimer = null;
+    }
+}
+
 // ==================== CARGAR ESTADOS ====================
 
 async function cargarEstados() {
     try {
         // Primero sincronizar con Laravel
         await fetch('/api/sincronizar', { method: 'POST' });
-        
+
         // Luego obtener estados locales actualizados
         const response = await fetch('/api/estados');
         const data = await response.json();
-        
+
         if (data.success) {
             mesasData = data.estados;
             actualizarUI(data.estados);
@@ -39,10 +69,10 @@ function actualizarUI(estados) {
     for (const [id, mesa] of Object.entries(estados)) {
         const mesaElement = document.querySelector(`[data-mesa-id="${id}"]`);
         if (!mesaElement) continue;
-        
+
         // Actualizar clases
         mesaElement.className = 'mesa-card';
-        
+
         if (mesa.estado === 'disponible') {
             mesaElement.classList.add('disponible');
         } else if (mesa.estado === 'ocupado') {
@@ -58,9 +88,9 @@ function actualizarUI(estados) {
 function handleMesaClick(mesaId) {
     const mesa = mesasData[mesaId];
     if (!mesa) return;
-    
+
     currentMesa = mesaId;
-    
+
     if (mesa.estado === 'disponible') {
         currentAction = 'ocupar';
         document.getElementById('confirm-title').textContent = 'Ocupar Mesa';
@@ -73,17 +103,27 @@ function handleMesaClick(mesaId) {
         showToast('Esta mesa no está disponible', 'info');
         return;
     }
-    
+
     openModal('confirm-modal');
 }
 
 function confirmAction() {
     closeModal('confirm-modal');
     openModal('qr-modal');
-    document.getElementById('modal-title').textContent = 
-        currentAction === 'ocupar' ? 
-        `Acerca tu credencial - Mesa ${currentMesa}` : 
-        `Confirma tu identidad - Mesa ${currentMesa}`;
+
+    document.getElementById('modal-title').textContent =
+        currentAction === 'ocupar'
+            ? `Acerca tu credencial - Mesa ${currentMesa}`
+            : `Confirma tu identidad - Mesa ${currentMesa}`;
+
+    // ✅ Prender preview al abrir modal
+    startCameraPreview();
+
+    // ✅ Auto-escanear (si NO lo quieres, comenta estas 3 líneas)
+    clearQrAutoScanTimer();
+    qrAutoScanTimer = setTimeout(() => {
+        escanearQR();
+    }, 600);
 }
 
 // ==================== TECLADO MANUAL ====================
@@ -108,9 +148,9 @@ function backspace() {
 
 async function submitMatricula() {
     const matricula = document.getElementById('matricula-input').value;
-    
+
     closeModal('keyboard-modal');
-    
+
     // Ejecutar acción (ocupar o liberar)
     if (currentAction === 'ocupar') {
         await ocuparMesa(currentMesa, matricula);
@@ -123,18 +163,22 @@ async function submitMatricula() {
 
 async function escanearQR() {
     showToast('Escaneando código QR...', 'info');
-    
+
+    // ⚠️ Importante: detener preview antes de escanear
+    // porque el stream y el escaneo pueden pelearse la cámara
+    stopCameraPreview();
+
     try {
         const response = await fetch('/api/escanear_qr', {
             method: 'POST'
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             closeModal('qr-modal');
             const matricula = data.matricula;
-            
+
             // Ejecutar acción
             if (currentAction === 'ocupar') {
                 await ocuparMesa(currentMesa, matricula);
@@ -143,10 +187,22 @@ async function escanearQR() {
             }
         } else {
             showToast(data.error || 'Error escaneando QR', 'error');
+
+            // Si falló, vuelve a prender preview para que el usuario se acomode
+            startCameraPreview();
+
+            // (Opcional) reintentar auto-scan después de un ratito
+            clearQrAutoScanTimer();
+            qrAutoScanTimer = setTimeout(() => {
+                escanearQR();
+            }, 1500);
         }
     } catch (error) {
         console.error('Error QR:', error);
         showToast('Error conectando con escáner', 'error');
+
+        // Vuelve a prender preview si hay error de red
+        startCameraPreview();
     }
 }
 
@@ -164,9 +220,9 @@ async function ocuparMesa(mesaId, matricula) {
                 matricula: matricula
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             showToast(data.mensaje, 'success');
             cargarEstados(); // Recargar estados
@@ -193,9 +249,9 @@ async function liberarMesa(mesaId, matricula) {
                 matricula: matricula
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             showToast(data.mensaje, 'success');
             cargarEstados(); // Recargar estados
@@ -216,6 +272,12 @@ function openModal(modalId) {
 
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
+
+    // ✅ Si se cierra el modal del QR, apagar preview y cancelar reintentos
+    if (modalId === 'qr-modal') {
+        stopCameraPreview();
+        clearQrAutoScanTimer();
+    }
 }
 
 // ==================== NOTIFICACIONES ====================
@@ -224,7 +286,7 @@ function showToast(mensaje, tipo = 'info') {
     const toast = document.getElementById('toast');
     toast.textContent = mensaje;
     toast.className = `toast ${tipo} show`;
-    
+
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
@@ -242,6 +304,6 @@ function updateClock() {
         hour: '2-digit',
         minute: '2-digit'
     };
-    document.getElementById('current-time').textContent = 
+    document.getElementById('current-time').textContent =
         now.toLocaleDateString('es-MX', options);
 }
