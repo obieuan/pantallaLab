@@ -170,35 +170,66 @@ def liberar_mesa():
         mesa_id = int(data['mesa_id'])
         matricula = str(data['matricula'])
         
+        logger.info(f"Intentando liberar Mesa {mesa_id} - {matricula}")
+        
+        # 1. Obtener mesa
         mesa = Mesa.query.get(mesa_id)
         if not mesa:
             return jsonify({'success': False, 'error': 'Mesa no existe'}), 404
         
+        # 2. Validar que mesa esté ocupada
         if mesa.estado != 1:
-            return jsonify({'success': False, 'error': 'Mesa no ocupada'}), 400
+            return jsonify({'success': False, 'error': 'La mesa no está ocupada'}), 400
         
-        if mesa.usuario_actual != matricula:
-            return jsonify({'success': False, 'error': 'Mesa no te pertenece'}), 400
+        # 3. Obtener user_id de la matrícula desde Laravel
+        success_info, info_alumno = laravel_client.obtener_info_alumno(matricula)
         
+        user_id_actual = None
+        if success_info:
+            # Laravel devuelve el objeto completo del alumno
+            user_id_actual = str(info_alumno.get('id')) if isinstance(info_alumno, dict) else None
+        
+        # 4. Validar que la mesa pertenezca a este usuario
+        # Puede estar guardado como user_id o como matrícula
+        if mesa.usuario_actual != matricula and mesa.usuario_actual != user_id_actual:
+            logger.warning(f"Mesa ocupada por '{mesa.usuario_actual}', intenta liberar '{matricula}' (user_id: {user_id_actual})")
+            return jsonify({'success': False, 'error': 'Esta mesa no te pertenece'}), 400
+        
+        # 5. Validar con API Laravel
         success, mensaje = laravel_client.finalizar_espacio(mesa_id, matricula)
         if not success:
             return jsonify({'success': False, 'error': mensaje}), 400
         
+        # 6. Actualizar base de datos local
         mesa.liberar()
-        sesion = Sesion.query.filter_by(mesa_id=mesa_id, matricula=matricula, hora_fin=None).first()
+        
+        # Finalizar sesión activa
+        sesion = Sesion.query.filter_by(
+            mesa_id=mesa_id,
+            matricula=matricula,
+            hora_fin=None
+        ).first()
+        
         if sesion:
             sesion.finalizar()
+        
         db.session.commit()
         
+        # 7. Apagar GPIO
         relay_controller.turn_off(mesa_id)
+        
+        logger.info(f"✓ Mesa {mesa_id} liberada exitosamente")
         
         return jsonify({
             'success': True,
             'mensaje': f'Mesa {mesa_id} liberada exitosamente',
             'mesa': {'id': mesa.id, 'estado': mesa.get_estado_str()}
         })
+    
+    except KeyError as e:
+        return jsonify({'success': False, 'error': f'Campo faltante: {e}'}), 400
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error liberando mesa: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/escanear_qr', methods=['POST'])
