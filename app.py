@@ -210,13 +210,69 @@ def escanear_qr():
         return jsonify({'success': True, 'matricula': result})
     else:
         return jsonify({'success': False, 'error': result}), 400
+    
+def sincronizar_inicial():
+    """Sincronización inicial al arrancar el servidor"""
+    logger.info("=" * 60)
+    logger.info("Sincronización inicial con Laravel...")
+    logger.info("=" * 60)
+    
+    try:
+        with app.app_context():
+            # Obtener mesas desde Laravel
+            success, mesas_laravel = laravel_client.obtener_todas_mesas()
+            
+            if not success:
+                logger.error("⚠ No se pudo sincronizar con Laravel al inicio")
+                return
+            
+            # Actualizar TODAS las mesas según Laravel
+            for mesa_laravel in mesas_laravel:
+                mesa_id = mesa_laravel.get('id')
+                
+                if not mesa_id or mesa_id < 1 or mesa_id > 16:
+                    continue
+                
+                mesa_local = Mesa.query.get(mesa_id)
+                if not mesa_local:
+                    continue
+                
+                estado_laravel = mesa_laravel.get('Estado', 0)
+                user_id_laravel = mesa_laravel.get('user_id')
+                
+                # Forzar actualización según Laravel
+                if estado_laravel == 1:
+                    # Laravel dice ocupada
+                    logger.info(f"Mesa {mesa_id}: ocupada (user {user_id_laravel})")
+                    mesa_local.estado = 1
+                    mesa_local.usuario_actual = str(user_id_laravel) if user_id_laravel else None
+                    mesa_local.hora_inicio = datetime.now()
+                    relay_controller.turn_on(mesa_id)
+                else:
+                    # Laravel dice disponible
+                    logger.info(f"Mesa {mesa_id}: disponible")
+                    mesa_local.liberar()
+                    relay_controller.turn_off(mesa_id)
+            
+            db.session.commit()
+            logger.info("✓ Sincronización inicial completada")
+            logger.info("=" * 60)
+    
+    except Exception as e:
+        logger.error(f"Error en sincronización inicial: {e}")
 
 if __name__ == '__main__':
     try:
-        print(f"\n✓ Servidor: http://{HOST}:{PORT}\n")
+        # Sincronización inicial
+        sincronizar_inicial()
+        
+        print(f"\n✓ Servidor iniciado en http://{HOST}:{PORT}")
+        print("Presiona Ctrl+C para detener\n")
         app.run(host=HOST, port=PORT, debug=DEBUG)
+    
     except KeyboardInterrupt:
-        print("\n⚠ Deteniendo...")
+        print("\n\n⚠ Deteniendo servidor...")
+    
     finally:
         relay_controller.cleanup()
-        print("✓ Sistema cerrado")
+        print("✓ Sistema cerrado correctamente")
