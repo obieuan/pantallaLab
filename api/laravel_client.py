@@ -133,13 +133,19 @@ class LaravelClient:
         Returns:
             (success, lista_mesas)
         """
+        logger.info("Consultando InfoTodasMesas...")
+        
         response = self._post("InfoTodasMesas")
         
-        # Laravel devuelve directamente el array, no usa Codigo/Datos
+        # Laravel devuelve directamente el array de mesas
         if isinstance(response, list):
+            logger.info(f"Recibidas {len(response)} mesas de Laravel")
             return True, response
+        elif isinstance(response, dict) and response.get("Codigo") == "1":
+            # Por si acaso Laravel lo envuelve en un objeto
+            return True, response.get("Datos", [])
         else:
-            # Si hay error, response será dict con Codigo
+            logger.error(f"Respuesta inesperada de Laravel: {response}")
             return False, []
 
 

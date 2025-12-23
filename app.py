@@ -63,38 +63,59 @@ def get_estados():
 def sincronizar_con_laravel():
     """Sincroniza estados desde Laravel"""
     try:
+        logger.info("Iniciando sincronización con Laravel...")
+        
         # Obtener mesas desde Laravel
         success, mesas_laravel = laravel_client.obtener_todas_mesas()
         
         if not success:
+            logger.error("Error consultando Laravel")
             return jsonify({'success': False, 'error': 'Error consultando Laravel'}), 500
         
+        logger.info(f"Recibidas {len(mesas_laravel)} mesas de Laravel")
+        
         # Actualizar base de datos local
+        actualizadas = 0
         for mesa_laravel in mesas_laravel:
             mesa_id = mesa_laravel.get('id')
+            
+            if not mesa_id or mesa_id < 1 or mesa_id > 16:
+                continue
+            
             mesa_local = Mesa.query.get(mesa_id)
             
             if not mesa_local:
+                logger.warning(f"Mesa {mesa_id} no existe en DB local")
                 continue
             
-            # Si Laravel dice ocupada pero local dice disponible
-            if mesa_laravel.get('Estado') == 1 and mesa_local.estado == 0:
-                # Actualizar local
+            estado_laravel = mesa_laravel.get('Estado', 0)
+            user_id_laravel = mesa_laravel.get('user_id')
+            
+            # Si Laravel dice ocupada (Estado=1)
+            if estado_laravel == 1 and mesa_local.estado != 1:
+                logger.info(f"Sincronizando Mesa {mesa_id}: ocupada por user_id {user_id_laravel}")
                 mesa_local.estado = 1
-                mesa_local.usuario_actual = str(mesa_laravel.get('user_id'))
+                mesa_local.usuario_actual = str(user_id_laravel) if user_id_laravel else None
                 mesa_local.hora_inicio = datetime.now()
+                actualizadas += 1
                 
-            # Si Laravel dice disponible pero local dice ocupada
-            elif mesa_laravel.get('Estado') == 0 and mesa_local.estado == 1:
-                # Liberar local
+            # Si Laravel dice disponible (Estado=0)
+            elif estado_laravel == 0 and mesa_local.estado != 0:
+                logger.info(f"Sincronizando Mesa {mesa_id}: liberada")
                 mesa_local.liberar()
+                actualizadas += 1
         
         db.session.commit()
+        logger.info(f"Sincronización completa: {actualizadas} mesas actualizadas")
         
-        return jsonify({'success': True, 'mensaje': 'Sincronizado correctamente'})
+        return jsonify({
+            'success': True, 
+            'mensaje': f'{actualizadas} mesas sincronizadas'
+        })
     
     except Exception as e:
-        logger.error(f"Error sincronizando: {e}")
+        logger.error(f"Error sincronizando: {e}", exc_info=True)
+        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/ocupar', methods=['POST'])
