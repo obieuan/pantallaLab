@@ -91,18 +91,26 @@ def sincronizar_con_laravel():
             estado_laravel = mesa_laravel.get('Estado', 0)
             user_id_laravel = mesa_laravel.get('user_id')
             
-            # Si Laravel dice ocupada (Estado=1)
+            # Si Laravel dice ocupada (Estado=1) pero local está disponible
             if estado_laravel == 1 and mesa_local.estado != 1:
                 logger.info(f"Sincronizando Mesa {mesa_id}: ocupada por user_id {user_id_laravel}")
                 mesa_local.estado = 1
                 mesa_local.usuario_actual = str(user_id_laravel) if user_id_laravel else None
                 mesa_local.hora_inicio = datetime.now()
+                
+                # ← AGREGAR: Encender GPIO
+                relay_controller.turn_on(mesa_id)
+                
                 actualizadas += 1
                 
-            # Si Laravel dice disponible (Estado=0)
+            # Si Laravel dice disponible (Estado=0) pero local está ocupada
             elif estado_laravel == 0 and mesa_local.estado != 0:
                 logger.info(f"Sincronizando Mesa {mesa_id}: liberada")
                 mesa_local.liberar()
+                
+                # ← AGREGAR: Apagar GPIO
+                relay_controller.turn_off(mesa_id)
+                
                 actualizadas += 1
         
         db.session.commit()
