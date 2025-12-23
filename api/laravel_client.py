@@ -28,7 +28,7 @@ class LaravelClient:
         """
         payload = {
             "Comando": comando,
-            "Token": self.token
+            "TokenApi": self.token
         }
         
         if parametros:
