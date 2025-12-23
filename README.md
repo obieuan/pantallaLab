@@ -1,474 +1,374 @@
-# 🔧 PantallaLab
+# 🔧 Lab Control MVP - Sistema de Mesas de Laboratorio
 
-Sistema de gestión y control de acceso a espacios de trabajo en talleres mediante relevadores y lectura RFID, desarrollado con Python y Flet.
+Sistema simplificado para control de 16 mesas mediante pantalla táctil, escáner QR y relés GPIO.
 
-## 📋 Descripción
+## 🎯 MVP - Funcional Mínimo
 
-PantallaLab es una aplicación de escritorio con interfaz gráfica que permite gestionar el uso de mesas de trabajo y espacios de soldadura en un taller. Los usuarios pueden iniciar y finalizar sesiones mediante lectura de tarjetas RFID (credenciales), mientras el sistema se comunica con una API REST para controlar relevadores y monitorear el estado en tiempo real.
+**Hardware:**
+- Raspberry Pi 4
+- Pantalla táctil HDMI (1024x600)
+- Cámara USB
+- Módulo 16 relés
 
-### ✨ Características principales
+**Funcionalidades:**
+1. ✅ Visualizar 16 mesas (azul=disponible, rojo=ocupado)
+2. ✅ Ocupar mesa (QR o teclado manual)
+3. ✅ Liberar mesa  
+4. ✅ Validar con API Laravel
+5. ✅ Control GPIO de relés
+6. ✅ Historial en SQLite
 
-- 🎴 **Lectura RFID**: Identificación automática mediante credenciales
-- 📊 **Monitoreo en tiempo real**: Visualización del estado de 14 espacios (12 mesas + 2 soldaduras)
-- 🔐 **Autenticación segura**: Sistema de tokens API
-- 💾 **Persistencia de sesiones**: Registro de usuarios activos en JSON
-- 🎨 **Interfaz moderna**: UI desarrollada con Flet
-- ⚡ **Control de relevadores**: Integración con hardware mediante API
-- 🚫 **Validaciones**: Prevención de mesas duplicadas y control de vinculación usuario-mesa
-- ⏱️ **Gestión de tiempo**: Registro de hora de inicio de cada sesión
+## 📋 Requisitos
 
-## 🖥️ Interfaz
-
-La aplicación muestra:
-- **12 mesas de trabajo** organizadas en 3 filas
-- **2 espacios de soldadura** en columna lateral
-- Indicadores visuales por color:
-  - 🔵 **Azul** (#0A3C82): Espacio disponible
-  - 🔴 **Rojo** (#7E0315): Espacio ocupado
-
-## 🛠️ Requisitos
-
-### Software
-- **Python 3.7+**
-- **Sistema operativo**: Windows, Linux o macOS
-- *Opcional*: Raspberry Pi 4 con lector RFID
-
-### Hardware (Opcional)
-- Lector RFID compatible
-- Módulo de relevadores para control de acceso
-- Credenciales RFID programadas
-
-## 📦 Instalación
-
-### 1. Clonar el repositorio
 ```bash
-git clone https://github.com/obieuan/pantallaLab.git
-cd pantallaLab
+# Python 3.9+
+sudo apt update
+sudo apt install python3-pip python3-venv
+
+# Librerías de sistema (Raspberry Pi)
+sudo apt install python3-rpi.gpio
+sudo apt install libzbar0  # Para QR
+sudo apt install python3-opencv  # Para cámara
+```
+
+## 🚀 Instalación en Raspberry Pi
+
+### 1. Copiar proyecto
+
+```bash
+# Desde tu PC
+scp lab-control-mvp.tar.gz pi@192.168.x.x:~/
+
+# En el Pi
+cd ~
+tar -xzf lab-control-mvp.tar.gz
+cd lab-control-mvp
 ```
 
 ### 2. Instalar dependencias
+
 ```bash
-pip install flet requests
+# Crear entorno virtual
+python3 -m venv venv
+source venv/bin/activate
+
+# Instalar paquetes Python
+pip install -r requirements.txt
+
+# Instalar hardware (solo en Pi)
+pip install RPi.GPIO opencv-python pyzbar
 ```
 
-> **Nota**: `asyncio`, `threading` y `json` vienen incluidos con Python 3.7+
+### 3. Configurar
 
-### 3. Estructura de archivos necesaria
-
-Crea la siguiente estructura:
-```
-pantallaLab/
-├── main.py
-├── components/
-│   ├── __init__.py
-│   ├── secrets.py          # ⚠️ Configurar
-│   ├── api/
-│   │   ├── __init__.py
-│   │   └── payloadsApi.py  # ⚠️ Configurar
-│   └── usuarios_activos.json  # Se crea automáticamente
-├── assets/
-│   ├── logosup.png
-│   └── logo_eium.png
-└── raspberrypi4/           # Opcional
-    └── lector.py
-```
-
-### 4. Configurar secrets.py
-
-Crea el archivo `components/secrets.py`:
-```python
-# components/secrets.py
-TokenApi = "TU_TOKEN_API_AQUI"
-urlApi = "https://tu-api.ejemplo.com/endpoint"
-```
-
-### 5. Configurar payloadsApi.py
-
-Crea el archivo `components/api/payloadsApi.py`:
-```python
-# components/api/payloadsApi.py
-headers = {'Content-Type': 'application/json'}
-
-def informacionApi(token, id_mesa):
-    """Obtiene información del estado de una mesa"""
-    return {
-        "TokenApi": token,
-        "Comando": "Informacion",
-        "idEspacio": id_mesa
-    }
-
-def informacionUsuarioApi(token, rfid, id_mesa):
-    """Obtiene información de un usuario por RFID"""
-    return {
-        "TokenApi": token,
-        "Matricula": rfid,
-        "idEspacio": id_mesa
-    }
-
-def iniciarMesaApi(token, rfid, id_mesa):
-    """Inicia una sesión en una mesa"""
-    return {
-        "TokenApi": token,
-        "Comando": "Iniciar",
-        "Matricula": rfid,
-        "idEspacio": id_mesa
-    }
-
-def finalizarMesaApi(token, rfid, id_mesa):
-    """Finaliza una sesión en una mesa"""
-    return {
-        "TokenApi": token,
-        "Comando": "Finalizar",
-        "Matricula": rfid,
-        "idEspacio": id_mesa
-    }
-```
-
-## 🚀 Uso
-
-### Iniciar la aplicación
 ```bash
-python main.py
+# Copiar template de configuración
+cp .env.example .env
+
+# IMPORTANTE: Editar .env y poner tu token real
+nano .env
+# Cambiar: API_TOKEN=TU_TOKEN_AQUI
+
+# ⚠️ NUNCA subas .env a Git
 ```
 
-La ventana se abrirá en **1024x600px** y mostrará:
-- Splash screen con logos institucionales
-- Barra de navegación superior
-- Grid de espacios disponibles/ocupados
+### 4. Probar
 
-### Flujo de trabajo
-
-#### 📥 Iniciar sesión en una mesa
-
-1. Usuario hace clic en una mesa **disponible** (azul)
-2. Sistema muestra diálogo de confirmación
-3. Usuario confirma la acción
-4. Sistema solicita acercar credencial al lector RFID
-5. **Validaciones automáticas**:
-   - ✅ Verifica que el usuario no tenga otra mesa activa
-   - ✅ Consulta información del usuario en la API
-   - ✅ Registra usuario en `usuarios_activos.json`
-6. Mesa cambia a **ocupado** (rojo) si es autorizado
-7. Relevador se activa mediante API
-
-#### 📤 Finalizar sesión
-
-1. Usuario hace clic en una mesa **ocupada** (roja)
-2. Sistema solicita acercar credencial
-3. **Validaciones automáticas**:
-   - ✅ Verifica que la mesa pertenezca al usuario
-   - ✅ Elimina registro de `usuarios_activos.json`
-4. Mesa cambia a **disponible** (azul)
-5. Relevador se desactiva
-
-## 📁 Estructura del Proyecto
-
-```
-pantallaLab/
-├── main.py                      # Aplicación principal con lógica de UI
-├── components/
-│   ├── secrets.py              # Token y URL de API (git-ignored)
-│   ├── usuarios_activos.json   # Registro de sesiones activas
-│   └── api/
-│       └── payloadsApi.py      # Generador de payloads para API
-├── assets/
-│   ├── logosup.png            # Logo institucional superior
-│   └── logo_eium.png          # Logo EIUM
-├── raspberrypi4/              # Módulo de hardware (opcional)
-│   └── lector.py              # Funciones de lectura RFID
-└── README.md
-```
-
-## 🔌 Documentación de API
-
-### 📍 Endpoint Base
-```
-POST {urlApi}
-```
-
-### 🔑 Autenticación
-Todas las peticiones requieren `TokenApi` en el payload.
-
----
-
-### 1️⃣ Obtener información de mesa
-
-**Payload**:
-```json
-{
-  "TokenApi": "string",
-  "Comando": "Informacion",
-  "idEspacio": "string"
-}
-```
-
-**Respuesta exitosa**:
-```json
-{
-  "id": "1",
-  "Estado": 0,
-  "user_id": null,
-  "FechaHora_Inicio": null
-}
-```
-
----
-
-### 2️⃣ Consultar información de usuario
-
-**Payload**:
-```json
-{
-  "TokenApi": "string",
-  "Matricula": "string",
-  "idEspacio": "string"
-}
-```
-
-**Respuesta exitosa**:
-```json
-{
-  "id": "12345",
-  "nombre": "Juan Pérez",
-  "Codigo": "1"
-}
-```
-
----
-
-### 3️⃣ Iniciar mesa
-
-**Payload**:
-```json
-{
-  "TokenApi": "string",
-  "Comando": "Iniciar",
-  "Matricula": "string",
-  "idEspacio": "string"
-}
-```
-
-**Respuesta exitosa**:
-```json
-{
-  "Codigo": "1",
-  "Mensaje": "Mesa iniciada correctamente"
-}
-```
-
----
-
-### 4️⃣ Finalizar mesa
-
-**Payload**:
-```json
-{
-  "TokenApi": "string",
-  "Comando": "Finalizar",
-  "Matricula": "string",
-  "idEspacio": "string"
-}
-```
-
-**Respuesta exitosa**:
-```json
-{
-  "Codigo": "1",
-  "Mensaje": "Mesa finalizada correctamente"
-}
-```
-
-## ⚠️ Códigos de Error
-
-| Código | Descripción | Acción recomendada |
-|--------|-------------|-------------------|
-| `0` | Acceso denegado | Verificar credenciales |
-| `1601` | Parámetros no válidos | Revisar estructura del payload |
-| `1602` | Token no válido | Regenerar token API |
-| `1603` | Matrícula no proporcionada | Verificar lectura RFID |
-| `1604` | Matrícula no encontrada | Usuario no registrado en sistema |
-| `1605` | Espacio no existe | Verificar ID de mesa |
-| `1608` | Espacio ya iniciado | Mesa ocupada por otro usuario |
-| `1609` | Usuario tiene espacio activo | Finalizar mesa anterior primero |
-| `1620` | Espacio no iniciado | No se puede finalizar mesa disponible |
-| `1621` | Espacio no corresponde al usuario | Solo el propietario puede finalizar |
-
-## 🔧 Funciones Principales
-
-### Gestión de Estado
-
-#### `cargar_usuarios_activos()`
-Carga el archivo JSON con usuarios activos al iniciar.
-
-#### `guardar_usuario_activo(mesa_id, user_id, FechaHora_Inicio, Estado)`
-Registra una nueva sesión activa en el sistema.
-- **Parámetros**: ID de mesa, matrícula, timestamp, estado
-- **Almacenamiento**: `usuarios_activos.json`
-
-#### `eliminar_usuario_activo(user_id)`
-Elimina el registro de sesión al finalizar.
-
----
-
-### Validaciones
-
-#### `comprobar_usuario_activo(user_id)`
-Valida que el usuario no tenga una mesa activa.
-- **Lanza**: `ValueError` si ya tiene mesa asignada
-
-#### `comprobar_mesa_activa(button_id)`
-Verifica el estado actual de una mesa.
-- **Retorna**: Estado de la mesa o `None`
-
-#### `comprobar_vinculacion_mesa(button_id, response_data, rfid_data, user_id)`
-Valida que el usuario sea propietario de la mesa que intenta finalizar.
-
----
-
-### API Requests
-
-#### `check_rfid_response(button_id, estadoMesa)`
-Gestiona el flujo completo de lectura RFID y comunicación con API.
-- Lee tarjeta RFID
-- Consulta información del usuario
-- Ejecuta validaciones
-- Inicia/finaliza mesa según corresponda
-- Actualiza interfaz
-
----
-
-### UI Components
-
-#### `EspacioButton(button_id, texto, subtexto, on_click)`
-Crea un botón de mesa con estado visual.
-- Consulta estado actual en API
-- Aplica color según disponibilidad
-- Registra en `button_refs` para actualizaciones
-
-#### `estado_ocupado(button_id)` / `estado_disponible(button_id)`
-Genera el contenido visual del botón según su estado.
-
----
-
-### Diálogos Modales
-
-#### `solicitudMesa(button_id, estadoMesa)`
-Diálogo de confirmación para iniciar mesa.
-
-#### `desocuparMesa(button_id, estadoMesa)`
-Diálogo de confirmación para finalizar mesa.
-
-#### `solicitarEscanear(button_id, estadoMesa)`
-Diálogo de espera durante lectura RFID.
-
-## 🎨 Clase `buttonObi`
-
-Componente reutilizable para botones de espacios (alternativa modular).
-
-```python
-from buttonObi import buttonObi
-
-# Crear botón
-boton = buttonObi(button_id=1, on_click=handle_click)
-
-# Actualizar estado
-boton.actualizar_estado(nuevo_estado=1)  # 0=disponible, 1=ocupado
-
-# Obtener componente Flet
-container = boton.obtener_boton()
-```
-
-## 🔒 Seguridad
-
-- ⚠️ **NUNCA** subas `secrets.py` a Git
-- Añade a `.gitignore`:
-```gitignore
-components/secrets.py
-components/usuarios_activos.json
-__pycache__/
-*.pyc
-```
-
-## 🧪 Testing
-
-Para probar sin hardware RFID, modifica en `main.py`:
-```python
-def check_rfid_response(button_id, estadoMesa):
-    # rfid_data = lecturaDeTarjeta()  # Comentar lectura real
-    rfid_data = 15136485  # Valor de prueba
-```
-
-## 🚀 Despliegue en Raspberry Pi
-
-1. Instalar dependencias en Raspberry Pi:
 ```bash
-sudo apt-get update
-sudo apt-get install python3-pip
-pip3 install flet requests
+# Ejecutar
+python app.py
+
+# Abrir en navegador del Pi
+http://localhost:5000
 ```
 
-2. Descomentar módulo de lectura RFID:
-```python
-from raspberrypi4.lector import lecturaDeTarjeta
-```
+## ⚙️ Configuración (.env)
 
-3. Configurar inicio automático (opcional):
 ```bash
-crontab -e
-# Añadir:
-@reboot python3 /ruta/pantallaLab/main.py
+# API Laravel
+API_URL=https://talleres.eium.com.mx/api/v1/consulta
+API_TOKEN=tu_token_aqui
+
+# Horario (Lun-Sáb 7:00-21:00)
+OPERATING_HOURS_START=07:00
+OPERATING_HOURS_END=21:00
+OPERATING_DAYS=0,1,2,3,4,5
+
+# Servidor
+PORT=5000
+
+# Cámara
+CAMERA_INDEX=0
+QR_TIMEOUT=15
 ```
 
-## 🤝 Contribuciones
+## 🔌 Mapeo GPIO
 
-¡Las contribuciones son bienvenidas!
+```
+Mesa  → Pin BCM
+─────────────────
+1  → GPIO 2
+2  → GPIO 3
+3  → GPIO 4
+4  → GPIO 17
+5  → GPIO 27
+6  → GPIO 22
+7  → GPIO 10
+8  → GPIO 9
+9  → GPIO 21
+10 → GPIO 20
+11 → GPIO 16
+12 → GPIO 12
+13 → GPIO 1  (Soldadura)
+14 → GPIO 7  (Soldadura)
+15 → GPIO 8  (Soldadura)
+16 → GPIO 25 (Soldadura)
+```
 
-1. Fork el proyecto
-2. Crea tu rama (`git checkout -b feature/MejoraPantalla`)
-3. Commit cambios (`git commit -m 'Añade animación de carga'`)
-4. Push a la rama (`git push origin feature/MejoraPantalla`)
-5. Abre un Pull Request
+## 📡 API Endpoints
 
-### Áreas de mejora
-- [ ] Agregar base de datos en lugar de JSON
-- [ ] Implementar sistema de reservas
-- [ ] Panel de administración web
-- [ ] Notificaciones push
-- [ ] Estadísticas de uso
-- [ ] Modo oscuro/claro
+### GET /api/estados
+Obtiene estado de todas las mesas
 
-## 🐛 Problemas Conocidos
+**Response:**
+```json
+{
+  "success": true,
+  "estados": {
+    "1": {
+      "id": 1,
+      "estado": "disponible",
+      "usuario": null,
+      "hora_inicio": null
+    }
+  }
+}
+```
 
-- El archivo `usuarios_activos.json` se reinicia al iniciar la app
-- La lectura RFID está hardcodeada en modo de prueba
-- No hay manejo de desconexión de red
+### POST /api/ocupar
+Ocupa una mesa
 
-## 📝 Changelog
+**Body:**
+```json
+{
+  "mesa_id": 1,
+  "matricula": "12345678"
+}
+```
 
-### v1.0.0 (Actual)
-- ✅ Interfaz gráfica con Flet
-- ✅ Sistema de gestión de 14 espacios
-- ✅ Integración con API REST
-- ✅ Validaciones de usuario y mesa
-- ✅ Registro de sesiones activas
+**Response:**
+```json
+{
+  "success": true,
+  "mensaje": "Mesa 1 ocupada exitosamente",
+  "mesa": {
+    "id": 1,
+    "estado": "ocupado",
+    "usuario": "12345678"
+  }
+}
+```
 
-## 📄 Licencia
+### POST /api/liberar
+Libera una mesa
 
-Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+**Body:**
+```json
+{
+  "mesa_id": 1,
+  "matricula": "12345678"
+}
+```
 
-## 👥 Créditos
+### POST /api/escanear_qr
+Escanea QR y retorna matrícula (requiere cámara)
 
-**Desarrollado por**: [@obieuan](https://github.com/obieuan)
+**Response:**
+```json
+{
+  "success": true,
+  "matricula": "12345678"
+}
+```
 
-**Institución**: Escuela de Ingeniería - Universidad Modelo
+## 🗂️ Estructura del Proyecto
+
+```
+lab-control-mvp/
+├── app.py                   # Aplicación Flask principal
+├── .env                      # Configuración
+├── requirements.txt
+├── config/
+│   └── settings.py          # Settings desde .env
+├── models/
+│   └── database.py          # SQLite: Mesa, Sesion
+├── hardware/
+│   ├── gpio_control.py      # Control relés
+│   └── qr_scanner.py        # Escáner QR
+├── api/
+│   └── laravel_client.py    # Cliente API Laravel
+├── templates/
+│   └── index.html           # Interfaz táctil
+├── static/
+│   ├── css/
+│   └── js/
+└── data/
+    └── lab_control.db       # Base de datos (auto-creado)
+```
+
+## 🔄 Flujo de Operación
+
+### Ocupar Mesa:
+
+```
+1. Usuario toca mesa azul (disponible)
+2. Modal: "Acerca tu credencial"
+3. Escanea QR o ingresa manual
+4. Validaciones:
+   ✓ Horario de operación
+   ✓ Usuario sin otra mesa activa
+   ✓ API Laravel valida matrícula
+5. Si OK:
+   → Actualiza DB local
+   → Enciende relé GPIO
+   → Mesa se pone roja
+```
+
+### Liberar Mesa:
+
+```
+1. Usuario toca mesa roja (ocupada)
+2. Confirma con su matrícula
+3. Validaciones:
+   ✓ Mesa pertenece al usuario
+   ✓ API Laravel confirma
+4. Si OK:
+   → Finaliza sesión en DB
+   → Apaga relé GPIO
+   → Mesa se pone azul
+```
+
+## 🐛 Troubleshooting
+
+### GPIO no funciona
+```bash
+# Agregar usuario al grupo gpio
+sudo usermod -a -G gpio $USER
+
+# Logout y login de nuevo
+```
+
+### Cámara no detecta
+```bash
+# Verificar cámara
+ls /dev/video*
+
+# Probar con otro índice en .env
+CAMERA_INDEX=1
+```
+
+### Puerto ocupado
+```bash
+# Cambiar puerto en .env
+PORT=5001
+```
+
+### Base de datos bloqueada
+```bash
+# Detener servidor
+# Borrar lock
+rm data/lab_control.db-shm data/lab_control.db-wal
+```
+
+## 🔐 Permisos
+
+```bash
+# Dar permisos de ejecución
+chmod +x app.py
+
+# Si usa systemd
+sudo chmod 644 /etc/systemd/system/lab-control.service
+```
+
+## 📝 Logs
+
+```bash
+# Ver logs en tiempo real
+tail -f logs/lab_control.log
+
+# Logs en consola
+python app.py
+```
+
+## 🚦 Autostart (Opcional)
+
+```bash
+# Crear servicio systemd
+sudo nano /etc/systemd/system/lab-control.service
+```
+
+```ini
+[Unit]
+Description=Lab Control MVP
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/lab-control-mvp
+Environment="PATH=/home/pi/lab-control-mvp/venv/bin"
+ExecStart=/home/pi/lab-control-mvp/venv/bin/python app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Activar
+sudo systemctl enable lab-control
+sudo systemctl start lab-control
+sudo systemctl status lab-control
+```
+
+## 📊 Base de Datos
+
+**Tabla: mesas**
+- id (1-16)
+- estado (0=disponible, 1=ocupado, 2=mantenimiento)
+- usuario_actual
+- hora_inicio
+
+**Tabla: sesiones**
+- id
+- mesa_id
+- matricula
+- hora_inicio
+- hora_fin
+- duracion_minutos
+
+## 🔮 Roadmap (Futuras Versiones)
+
+- [ ] API de configuraciones desde Laravel
+- [ ] Dashboard administrativo
+- [ ] Estadísticas avanzadas
+- [ ] Reservas
+- [ ] Alertas de tiempo
+- [ ] Integración SIGE
+- [ ] App móvil
+
+## 💡 Tips
+
+1. **Testing sin hardware:** El sistema detecta automáticamente si está en Pi y activa modo simulación
+2. **Cambiar horarios:** Edita `.env` y reinicia servidor
+3. **Reset completo:** Borra `data/lab_control.db` y reinicia
+4. **Ver BD:** `sqlite3 data/lab_control.db` luego `.tables` y `SELECT * FROM mesas;`
 
 ## 📞 Soporte
 
-¿Tienes problemas o sugerencias?
-- 🐛 Abre un [issue](https://github.com/obieuan/pantallaLab/issues)
-- 💬 Inicia una [discusión](https://github.com/obieuan/pantallaLab/discussions)
-- 📧 Contacta al desarrollador
+Para problemas o mejoras, contactar al equipo de desarrollo.
 
 ---
 
-**⭐ Si este proyecto te fue útil, considera darle una estrella en GitHub**
+**Desarrollado para EIUM - Diciembre 2024**
+**Versión MVP 1.0**

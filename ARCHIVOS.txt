@@ -1,0 +1,33 @@
+
+LAB CONTROL MVP - Archivos Incluidos
+====================================
+
+CONFIGURACIÓN:
+- .env
+- requirements.txt  
+- install.sh
+- README.md
+
+CÓDIGO PYTHON:
+- app.py (crear manualmente - lo proporcionaré separado)
+- config/settings.py (crear manualmente)
+- models/database.py (crear manualmente)
+- hardware/gpio_control.py (crear manualmente)
+- hardware/qr_scanner.py (crear manualmente)
+- api/laravel_client.py (crear manualmente)
+
+INTERFAZ:
+- templates/index.html (tu interfaz moderna)
+
+ESTRUCTURA:
+- data/ (base de datos)
+- static/css/
+- static/js/
+- logs/
+
+INSTRUCCIONES:
+1. Descomprimir: tar -xzf lab-control-mvp.tar.gz
+2. cd lab-control-mvp
+3. Copiar archivos Python proporcionados
+4. bash install.sh
+5. python app.py
