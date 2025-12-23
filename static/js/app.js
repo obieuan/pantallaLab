@@ -19,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function cargarEstados() {
     try {
+        // Primero sincronizar con Laravel
+        await fetch('/api/sincronizar', { method: 'POST' });
+        
+        // Luego obtener estados locales actualizados
         const response = await fetch('/api/estados');
         const data = await response.json();
         

@@ -59,6 +59,44 @@ def get_estados():
         'qr_available': qr_scanner.is_available()
     })
 
+@app.route('/api/sincronizar', methods=['POST'])
+def sincronizar_con_laravel():
+    """Sincroniza estados desde Laravel"""
+    try:
+        # Obtener mesas desde Laravel
+        success, mesas_laravel = laravel_client.obtener_todas_mesas()
+        
+        if not success:
+            return jsonify({'success': False, 'error': 'Error consultando Laravel'}), 500
+        
+        # Actualizar base de datos local
+        for mesa_laravel in mesas_laravel:
+            mesa_id = mesa_laravel.get('id')
+            mesa_local = Mesa.query.get(mesa_id)
+            
+            if not mesa_local:
+                continue
+            
+            # Si Laravel dice ocupada pero local dice disponible
+            if mesa_laravel.get('Estado') == 1 and mesa_local.estado == 0:
+                # Actualizar local
+                mesa_local.estado = 1
+                mesa_local.usuario_actual = str(mesa_laravel.get('user_id'))
+                mesa_local.hora_inicio = datetime.now()
+                
+            # Si Laravel dice disponible pero local dice ocupada
+            elif mesa_laravel.get('Estado') == 0 and mesa_local.estado == 1:
+                # Liberar local
+                mesa_local.liberar()
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'mensaje': 'Sincronizado correctamente'})
+    
+    except Exception as e:
+        logger.error(f"Error sincronizando: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/ocupar', methods=['POST'])
 def ocupar_mesa():
     try:

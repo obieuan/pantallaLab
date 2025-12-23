@@ -135,9 +135,11 @@ class LaravelClient:
         """
         response = self._post("InfoTodasMesas")
         
-        if response.get("Codigo") == "1":
-            return True, response.get("Datos", [])
+        # Laravel devuelve directamente el array, no usa Codigo/Datos
+        if isinstance(response, list):
+            return True, response
         else:
+            # Si hay error, response será dict con Codigo
             return False, []
 
 
