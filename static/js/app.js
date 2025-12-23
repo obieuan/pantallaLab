@@ -109,11 +109,6 @@ function backspace() {
 async function submitMatricula() {
     const matricula = document.getElementById('matricula-input').value;
     
-    if (matricula.length < 6) {
-        showToast('Matrícula debe tener al menos 6 caracteres', 'error');
-        return;
-    }
-    
     closeModal('keyboard-modal');
     
     // Ejecutar acción (ocupar o liberar)
