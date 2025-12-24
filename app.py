@@ -13,6 +13,7 @@ from hardware.qr_scanner import qr_scanner
 from api.laravel_client import laravel_client 
 from config.settings import CAMERA_INDEX
 from hardware.camera_service import CameraService
+import time
 
 
 logging.basicConfig(level=logging.INFO)
