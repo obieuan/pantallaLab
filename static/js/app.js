@@ -85,37 +85,33 @@ function startQrPolling() {
             if (data.qr) {
                 const matricula = data.qr;
 
-                // Evita re-detección repetida del mismo valor en mil polls
-                if (matricula === lastQrSeen && (Date.now() - lastQrSeenAt) < QR_STALE_MS) {
-                    return;
-                }
+                // evita rebotes del mismo valor
+                if (matricula === lastQrSeen && (Date.now() - lastQrSeenAt) < QR_STALE_MS) return;
 
-                // Marca como visto y bloquea el flujo
                 lastQrSeen = matricula;
                 lastQrSeenAt = Date.now();
                 qrFlowBusy = true;
 
-                // ✅ Feedback inmediato al usuario
-                setQrModalStatus(`✅ QR detectado: ${matricula}. Validando...`, 'success');
+                // 1) Feedback inmediato
+                showToast(`✅ QR detectado: ${matricula}`, 'success');
 
-                // ✅ Consumir inmediatamente para que NO se quede pegado y NO se use en otra mesa
+                // 2) Consumir YA para que no se pegue
                 await consumeQrBackend();
 
-                // ✅ Detener cámara/polling para que no vuelva a detectar mientras valida
-                stopQrPolling();
-                stopCameraPreview();
+                // 3) Cerrar modal INMEDIATO (esto también apaga cámara/polling por tu closeModal)
+                closeModal('qr-modal');
 
-                // Ejecutar acción (puede tardar por internet)
+                // 4) Mientras valida por internet, muestra mensaje
+                showToast('⏳ Validando…', 'info');
+
+                // 5) Ejecutar acción (puede tardar)
                 if (currentAction === 'ocupar') {
                     await ocuparMesa(currentMesa, matricula);
                 } else if (currentAction === 'liberar') {
                     await liberarMesa(currentMesa, matricula);
                 }
 
-                // Cierra modal al final (o si prefieres, al inicio)
-                closeModal('qr-modal');
-
-                // Reset por si vuelves a abrir
+                // 6) Reset para siguiente uso
                 resetQrFlowState();
             }
         } catch (e) {
