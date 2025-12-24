@@ -13,6 +13,10 @@ let qrFlowBusy = false;
 let lastQrSeen = null;
 let lastQrSeenAt = 0;
 const QR_STALE_MS = 1500; // si un QR se detectó hace >1.5s, lo consideramos "viejo" para el siguiente intento
+// 1x1 gif transparente para evitar icono de "imagen rota"
+const TRANSPARENT_GIF =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+let cameraRetryTimer = null;
 
 // ==================== INICIALIZACIÓN ====================
 
@@ -27,23 +31,58 @@ document.addEventListener('DOMContentLoaded', () => {
 // ==================== CÁMARA PREVIEW (QR) ====================
 
 function startCameraPreview() {
-    const img = document.getElementById('camera-preview');
-    if (!img) return;
-    img.src = '/api/camera_feed';
+  const img = document.getElementById('camera-preview');
+  if (!img) return;
+
+  // Limpia retry previo
+  if (cameraRetryTimer) {
+    clearTimeout(cameraRetryTimer);
+    cameraRetryTimer = null;
+  }
+
+  // Siempre arranca oculto (evita el ícono roto mientras conecta)
+  img.style.display = 'none';
+
+  // Handlers
+  img.onload = () => {
+    // Cuando logra conectar al stream, ya lo mostramos
     img.style.display = 'block';
+  };
+
+  img.onerror = () => {
+    // Si falla, NO lo dejes visible roto
+    img.style.display = 'none';
+
+    // reintento suave
+    cameraRetryTimer = setTimeout(() => {
+      img.src = '/api/camera_feed?t=' + Date.now(); // cache buster
+    }, 400);
+  };
+
+  // Placeholder primero (para que nunca quede con src vacío)
+  img.src = TRANSPARENT_GIF;
+
+  // Pequeño tick y luego stream (ayuda con modales)
+  setTimeout(() => {
+    img.src = '/api/camera_feed?t=' + Date.now();
+  }, 80);
 }
 
 function stopCameraPreview() {
-    const img = document.getElementById('camera-preview');
-    if (!img) return;
+  const img = document.getElementById('camera-preview');
+  if (!img) return;
 
-    // cortar stream MJPEG de forma más agresiva
-    img.style.display = 'none';
-    img.removeAttribute('src');
-    img.src = 'about:blank';
+  if (cameraRetryTimer) {
+    clearTimeout(cameraRetryTimer);
+    cameraRetryTimer = null;
+  }
 
-    // por si el navegador conserva conexión, fuerza a vaciar
-    img.src = '';
+  img.onload = null;
+  img.onerror = null;
+
+  // Oculta primero, luego resetea src a un placeholder (NO vacío)
+  img.style.display = 'none';
+  img.src = TRANSPARENT_GIF;
 }
 
 // Feedback visual en el modal QR
