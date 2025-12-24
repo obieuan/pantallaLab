@@ -36,8 +36,14 @@ function startCameraPreview() {
 function stopCameraPreview() {
     const img = document.getElementById('camera-preview');
     if (!img) return;
-    img.src = '';
+
+    // cortar stream MJPEG de forma más agresiva
     img.style.display = 'none';
+    img.removeAttribute('src');
+    img.src = 'about:blank';
+
+    // por si el navegador conserva conexión, fuerza a vaciar
+    img.src = '';
 }
 
 // Feedback visual en el modal QR
@@ -92,26 +98,30 @@ function startQrPolling() {
                 lastQrSeenAt = Date.now();
                 qrFlowBusy = true;
 
-                // 1) Feedback inmediato
                 showToast(`✅ QR detectado: ${matricula}`, 'success');
-
-                // 2) Consumir YA para que no se pegue
-                await consumeQrBackend();
-
-                // 3) Cerrar modal INMEDIATO (esto también apaga cámara/polling por tu closeModal)
-                closeModal('qr-modal');
-
-                // 4) Mientras valida por internet, muestra mensaje
                 showToast('⏳ Validando…', 'info');
 
-                // 5) Ejecutar acción (puede tardar)
+                // 1) PRIMERO corta polling + stream (libera Flask)
+                stopQrPolling();
+                stopCameraPreview();
+
+                // 2) Cierra modal YA (visual)
+                document.getElementById('qr-modal').classList.remove('active');
+
+                // 3) Da un “tick” para que el navegador realmente cierre la conexión del stream
+                await new Promise(r => setTimeout(r, 50));
+
+                // 4) AHORA sí consume el QR (para que no se pegue)
+                await consumeQrBackend();
+
+                // 5) Ejecuta acción (ya sin stream bloqueando)
                 if (currentAction === 'ocupar') {
                     await ocuparMesa(currentMesa, matricula);
                 } else if (currentAction === 'liberar') {
                     await liberarMesa(currentMesa, matricula);
                 }
 
-                // 6) Reset para siguiente uso
+                // 6) Limpia estado
                 resetQrFlowState();
             }
         } catch (e) {

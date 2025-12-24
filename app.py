@@ -329,7 +329,7 @@ if __name__ == '__main__':
         
         print(f"\n✓ Servidor iniciado en http://{HOST}:{PORT}")
         print("Presiona Ctrl+C para detener\n")
-        app.run(host=HOST, port=PORT, debug=DEBUG)
+        app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)
     
     except KeyboardInterrupt:
         print("\n\n⚠ Deteniendo servidor...")
