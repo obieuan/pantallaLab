@@ -135,8 +135,6 @@ http://192.168.x.x:5000
 
 ## 🔌 Mapeo GPIO (Actualizado)
 
-**IMPORTANTE:** Mesas 1-8 tienen mapeo invertido por cableado físico.
-
 ```
 Mesa  → Pin BCM  → Pin Físico
 ────────────────────────────────
@@ -183,7 +181,7 @@ Obtiene estado de todas las mesas (desde DB local)
 ```
 
 ### POST /api/sincronizar
-**NUEVO:** Sincroniza estados desde Laravel y actualiza GPIO
+**NUEVO:** Sincroniza estados desde nube y actualiza GPIO
 
 **Response:**
 ```json
@@ -322,12 +320,12 @@ pantallalab/
    → Mesa se pone azul
 ```
 
-### Sincronización Laravel → Pantalla (Automática):
+### Sincronización Server → Pantalla (Automática):
 
 ```
 Cada 5 segundos:
 1. Frontend llama POST /api/sincronizar
-2. Backend consulta Laravel (InfoTodasMesas)
+2. Backend consulta Server (InfoTodasMesas)
 3. Por cada mesa:
    Si Laravel dice ocupada Y local disponible:
      → Actualiza DB: estado=1, usuario=user_id
@@ -348,248 +346,6 @@ Al ejecutar python app.py:
 4. Garantiza que pantalla y relés coincidan con Laravel
 ```
 
-## 🆕 Características Nuevas (vs README anterior)
-
-### ✨ **CameraService (Thread Background)**
-- Cámara **siempre encendida** en thread separado
-- Decodifica QR cada 3 frames (optimización CPU)
-- Stream MJPEG disponible en `/api/camera_feed`
-- Buffer de último QR detectado (con timestamp)
-
-### 🔄 **Sincronización Bidireccional**
-- **Pantalla → Laravel:** Al ocupar/liberar desde interfaz
-- **Laravel → Pantalla:** Cada 5s automáticamente
-- **Inicial:** Al arrancar sistema, sincroniza TODO
-
-### 🎥 **Preview de Cámara en Vivo**
-- Modal QR muestra feed de cámara en tiempo real
-- Detección automática de QR cada 200ms
-- Cierre automático al detectar código válido
-- Manejo robusto de errores de conexión
-
-### 🔧 **Validación Mejorada al Liberar**
-- Compara tanto `matricula` como `user_id` del usuario
-- Soluciona bug: "mesa no te pertenece" después de reiniciar
-- Consulta info de alumno desde Laravel para obtener `user_id`
-
-## 🐛 Troubleshooting
-
-### La cámara no muestra preview
-
-```bash
-# Verificar que el servicio de cámara esté corriendo
-# En los logs debe aparecer:
-# ✓ CameraService iniciado (index=0)
-
-# Verificar endpoint directamente
-curl http://localhost:5000/api/qr_status
-
-# Debe responder:
-# {"success":true,"qr":null,"ts":null,"camera_running":true}
-```
-
-### GPIO no funciona
-
-```bash
-# Verificar permisos
-sudo usermod -a -G gpio obieuan
-# Logout y login
-
-# Verificar en logs al arrancar:
-# ✓ GPIO configurado (16 relés)
-```
-
-### Base de datos "unable to open database file"
-
-```bash
-# Verificar que data/ existe
-mkdir -p data
-
-# Verificar ruta en .env (debe ser ABSOLUTA)
-# CORRECTO:
-DATABASE_URI=sqlite:////home/obieuan/pantalla/pantallalab/data/lab_control.db
-
-# INCORRECTO:
-DATABASE_URI=sqlite:///data/lab_control.db  # Relativo, puede fallar
-```
-
-### Sincronización no funciona
-
-```bash
-# Verificar token en .env
-grep API_TOKEN .env
-
-# Verificar endpoint Laravel con Postman:
-POST https://talleres.eium.com.mx/api/v1/consulta
-{
-  "TokenApi": "tu_token_aqui",
-  "Comando": "InfoTodasMesas"
-}
-
-# Debe responder con array de mesas
-```
-
-### Mesa no se libera: "no te pertenece"
-
-Esto pasa si:
-1. Ocupaste desde Laravel (guarda `user_id`)
-2. Reinicias Raspberry Pi
-3. Intentas liberar desde pantalla (con matrícula)
-
-**Solución:** El sistema ahora consulta Laravel para obtener el `user_id` de la matrícula y compara ambos. Si persiste, verifica logs:
-
-```bash
-# Debe aparecer:
-# Mesa ocupada por '123', intenta liberar '5454' (user_id: 123)
-# Y luego debe permitir liberar
-```
-
-## 🔐 Seguridad
-
-```bash
-# NUNCA subir a Git:
-.env
-*.db
-*.log
-
-# Verificar .gitignore:
-cat .gitignore
-```
-
-**.gitignore debe incluir:**
-```
-.env
-*.db
-*.log
-__pycache__/
-*.pyc
-venv/
-```
-
-## 🚦 Autostart (Producción)
-
-```bash
-# Crear servicio
-sudo nano /etc/systemd/system/lab-control.service
-```
-
-```ini
-[Unit]
-Description=Lab Control MVP
-After=network.target
-
-[Service]
-Type=simple
-User=obieuan
-WorkingDirectory=/home/obieuan/pantalla/pantallalab
-Environment="PATH=/home/obieuan/pantalla/pantallalab/venv/bin"
-ExecStart=/home/obieuan/pantalla/pantallalab/venv/bin/python app.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable lab-control
-sudo systemctl start lab-control
-
-# Ver logs
-sudo journalctl -u lab-control -f
-```
-
-### Kiosk Mode (Chromium fullscreen)
-
-```bash
-mkdir -p ~/.config/autostart
-nano ~/.config/autostart/lab-control-browser.desktop
-```
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=Lab Control Browser
-Exec=chromium-browser --kiosk --disable-restore-session-state http://localhost:5000
-X-GNOME-Autostart-enabled=true
-```
-
-## 📊 Base de Datos
-
-**Tabla: mesas**
-- `id` (1-16)
-- `estado` (0=disponible, 1=ocupado, 2=mantenimiento)
-- `usuario_actual` (matrícula O user_id, depende del origen)
-- `hora_inicio`
-
-**Tabla: sesiones**
-- `id`
-- `mesa_id`
-- `matricula`
-- `hora_inicio`
-- `hora_fin`
-- `duracion_minutos`
-
-```bash
-# Consultar DB
-sqlite3 data/lab_control.db
-
-sqlite> .tables
-sqlite> SELECT * FROM mesas;
-sqlite> SELECT * FROM sesiones WHERE hora_fin IS NULL;
-sqlite> .exit
-```
-
-## 📝 Comandos de Laravel API
-
-El sistema usa estos comandos de la API:
-
-| Comando | Uso | Parámetros |
-|---------|-----|------------|
-| `Iniciar` | Ocupar mesa | `idEspacio`, `Matricula` |
-| `Finalizar` | Liberar mesa | `idEspacio`, `Matricula` |
-| `InfoAlumno` | Obtener datos alumno | `Matricula` |
-| `InfoTodasMesas` | Sincronizar estados | Ninguno |
-
-**Nota:** El parámetro del token es `TokenApi` (no `Token`).
-
-## 💡 Tips de Desarrollo
-
-1. **Testing sin hardware:** 
-   - GPIO: Modo simulación automático si no detecta RPi.GPIO
-   - Cámara: Usa `/dev/video0`, ajusta `CAMERA_INDEX` si tienes múltiples cámaras
-
-2. **Debug de sincronización:**
-   ```bash
-   # Ver logs en tiempo real
-   tail -f /var/log/syslog | grep lab-control
-   
-   # O si ejecutas manualmente:
-   python app.py
-   # Verás logs cada 5s de sincronización
-   ```
-
-3. **Probar endpoints con curl:**
-   ```bash
-   # Sincronizar manualmente
-   curl -X POST http://localhost:5000/api/sincronizar
-   
-   # Ver estados
-   curl http://localhost:5000/api/estados
-   
-   # Estado de cámara
-   curl http://localhost:5000/api/qr_status
-   ```
-
-4. **Resetear sistema:**
-   ```bash
-   # Detener servidor
-   rm data/lab_control.db
-   python app.py
-   # Crea nueva DB vacía, sincroniza con Laravel
-   ```
-
 ## 🔮 Mejoras Futuras
 
 - [ ] WebSocket bidireccional (reemplazar polling de 5s)
@@ -600,10 +356,9 @@ El sistema usa estos comandos de la API:
 - [ ] Multi-tenant (múltiples laboratorios)
 - [ ] App móvil complementaria
 - [ ] Sistema de reportes
-- [ ] Integración con SIGE/SAE
 
 ---
 
 **Desarrollado para EIUM**  
-**Versión MVP 2.0 - Diciembre 2024**  
+**Versión MVP 2.0 - Diciembre 2025**  
 **Con sincronización bidireccional y preview de cámara**
