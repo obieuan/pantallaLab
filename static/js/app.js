@@ -8,6 +8,12 @@ let mesasData = {};
 // ===== Preview / QR live =====
 let qrPollInterval = null;
 
+// Evita que se use un QR viejo y controla estado del flujo QR
+let qrFlowBusy = false;
+let lastQrSeen = null;
+let lastQrSeenAt = 0;
+const QR_STALE_MS = 1500; // si un QR se detectó hace >1.5s, lo consideramos "viejo" para el siguiente intento
+
 // ==================== INICIALIZACIÓN ====================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -34,32 +40,90 @@ function stopCameraPreview() {
     img.style.display = 'none';
 }
 
+// Feedback visual en el modal QR
+function setQrModalStatus(texto, tipo = 'info') {
+    // Si tienes un elemento para texto, úsalo.
+    // Reusa toast para no obligarte a cambiar HTML.
+    // tipo: 'info' | 'success' | 'error'
+    showToast(texto, tipo);
+
+    // Si tu HTML tiene algo como <p class="scan-text">..., lo actualizamos también.
+    const scanText = document.querySelector('#qr-modal .scan-text');
+    if (scanText) scanText.textContent = texto;
+}
+
+// Limpia cualquier QR “pegado” localmente al abrir modal
+function resetQrFlowState() {
+    qrFlowBusy = false;
+    lastQrSeen = null;
+    lastQrSeenAt = 0;
+}
+
+async function consumeQrBackend() {
+    // Esto debe llamar a tu endpoint que hace "consume_last_qr"
+    // Si aún no lo tienes así, igual sirve para limpiar si lo implementaste como te pasé.
+    try {
+        await fetch('/api/escanear_qr', { method: 'POST' });
+    } catch (e) {
+        // Silencioso
+    }
+}
+
 function startQrPolling() {
     stopQrPolling();
+    resetQrFlowState();
 
     qrPollInterval = setInterval(async () => {
+        // Si ya estamos procesando uno, no sigas leyendo
+        if (qrFlowBusy) return;
+
         try {
-            const res = await fetch('/api/qr_status');
+            const res = await fetch('/api/qr_status', { cache: 'no-store' });
             const data = await res.json();
             if (!data.success) return;
 
-            // Si detectó una matrícula
             if (data.qr) {
                 const matricula = data.qr;
 
-                // Cierra QR modal y ejecuta acción
-                closeModal('qr-modal');
+                // Evita re-detección repetida del mismo valor en mil polls
+                if (matricula === lastQrSeen && (Date.now() - lastQrSeenAt) < QR_STALE_MS) {
+                    return;
+                }
 
+                // Marca como visto y bloquea el flujo
+                lastQrSeen = matricula;
+                lastQrSeenAt = Date.now();
+                qrFlowBusy = true;
+
+                // ✅ Feedback inmediato al usuario
+                setQrModalStatus(`✅ QR detectado: ${matricula}. Validando...`, 'success');
+
+                // ✅ Consumir inmediatamente para que NO se quede pegado y NO se use en otra mesa
+                await consumeQrBackend();
+
+                // ✅ Detener cámara/polling para que no vuelva a detectar mientras valida
+                stopQrPolling();
+                stopCameraPreview();
+
+                // Ejecutar acción (puede tardar por internet)
                 if (currentAction === 'ocupar') {
                     await ocuparMesa(currentMesa, matricula);
                 } else if (currentAction === 'liberar') {
                     await liberarMesa(currentMesa, matricula);
                 }
+
+                // Cierra modal al final (o si prefieres, al inicio)
+                closeModal('qr-modal');
+
+                // Reset por si vuelves a abrir
+                resetQrFlowState();
             }
         } catch (e) {
-            // silencioso para no spamear
+            // Si falla, no lo dejes muerto; avisa y sigue intentando
+            console.error('qr_status failed', e);
+            setQrModalStatus('⚠ Error leyendo cámara/QR. Reintentando...', 'error');
         }
-    }, 250);
+    }, 200); // un poco más rápido para sensación "instantánea"
 }
 
 function stopQrPolling() {
@@ -131,7 +195,7 @@ function handleMesaClick(mesaId) {
     openModal('confirm-modal');
 }
 
-function confirmAction() {
+async function confirmAction() {
     closeModal('confirm-modal');
     openModal('qr-modal');
 
@@ -139,6 +203,13 @@ function confirmAction() {
         currentAction === 'ocupar'
             ? `Acerca tu credencial - Mesa ${currentMesa}`
             : `Confirma tu identidad - Mesa ${currentMesa}`;
+
+    // ✅ MUY IMPORTANTE: limpiar backend al abrir para que no agarre un QR viejo
+    // (por si quedó uno detectado de hace rato)
+    await consumeQrBackend();
+    resetQrFlowState();
+
+    setQrModalStatus('Escaneando código QR...', 'info');
 
     // Preview + escucha QR en vivo
     startCameraPreview();
@@ -265,6 +336,7 @@ function closeModal(modalId) {
     if (modalId === 'qr-modal') {
         stopQrPolling();
         stopCameraPreview();
+        resetQrFlowState();
     }
 }
 
