@@ -11,6 +11,8 @@ from models.database import db, init_db, Mesa, Sesion
 from hardware.gpio_control import relay_controller
 from hardware.qr_scanner import qr_scanner
 from api.laravel_client import laravel_client 
+from config.settings import CAMERA_INDEX
+from hardware.camera_service import CameraService
 
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +21,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+camera_service = CameraService(camera_index=CAMERA_INDEX, decode_every_n_frames=3)
+camera_service.start()
+
 
 init_db(app)
 
@@ -236,13 +241,12 @@ def liberar_mesa():
 
 @app.route('/api/escanear_qr', methods=['POST'])
 def escanear_qr():
-    if not qr_scanner.is_available():
-        return jsonify({'success': False, 'error': 'Escáner no disponible'}), 503
-    success, result = qr_scanner.scan()
-    if success:
-        return jsonify({'success': True, 'matricula': result})
-    else:
-        return jsonify({'success': False, 'error': result}), 400
+    # Devuelve el último QR detectado por el stream (si existe)
+    qr = camera_service.consume_last_qr()
+    if qr:
+        return jsonify({'success': True, 'matricula': qr})
+    return jsonify({'success': False, 'error': 'Aún no se detecta QR'}), 400
+
     
 def sincronizar_inicial():
     """Sincronización inicial al arrancar el servidor"""
@@ -294,27 +298,28 @@ def sincronizar_inicial():
     except Exception as e:
         logger.error(f"Error en sincronización inicial: {e}")
 
-def gen_frames(camera_index=0):
-    cap = cv2.VideoCapture(camera_index)
-    if not cap.isOpened():
-        return
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                continue
-            ret2, buffer = cv2.imencode('.jpg', frame)
-            if not ret2:
-                continue
-            frame_bytes = buffer.tobytes()
+def gen_frames_from_service():
+    while True:
+        jpg = camera_service.get_jpeg()
+        if jpg:
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-    finally:
-        cap.release()
+                   b'Content-Type: image/jpeg\r\n\r\n' + jpg + b'\r\n')
+        else:
+            time.sleep(0.05)
 
 @app.route('/api/camera_feed')
 def camera_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(gen_frames_from_service(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/api/qr_status', methods=['GET'])
+def qr_status():
+    qr, ts = camera_service.peek_last_qr()
+    return jsonify({
+        "success": True,
+        "qr": qr,
+        "ts": ts,
+        "camera_running": camera_service.is_running()
+    })
 
 
 if __name__ == '__main__':
@@ -332,3 +337,4 @@ if __name__ == '__main__':
     finally:
         relay_controller.cleanup()
         print("✓ Sistema cerrado correctamente")
+        camera_service.stop()

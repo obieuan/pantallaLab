@@ -5,8 +5,8 @@ let currentMesa = null;
 let currentAction = null;
 let mesasData = {};
 
-// ===== Preview / Cámara =====
-let qrAutoScanTimer = null;
+// ===== Preview / QR live =====
+let qrPollInterval = null;
 
 // ==================== INICIALIZACIÓN ====================
 
@@ -23,8 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
 function startCameraPreview() {
     const img = document.getElementById('camera-preview');
     if (!img) return;
-
-    // Inicia MJPEG stream desde backend
     img.src = '/api/camera_feed';
     img.style.display = 'block';
 }
@@ -32,16 +30,42 @@ function startCameraPreview() {
 function stopCameraPreview() {
     const img = document.getElementById('camera-preview');
     if (!img) return;
-
-    // Detiene MJPEG stream (libera cámara del lado navegador)
     img.src = '';
     img.style.display = 'none';
 }
 
-function clearQrAutoScanTimer() {
-    if (qrAutoScanTimer) {
-        clearTimeout(qrAutoScanTimer);
-        qrAutoScanTimer = null;
+function startQrPolling() {
+    stopQrPolling();
+
+    qrPollInterval = setInterval(async () => {
+        try {
+            const res = await fetch('/api/qr_status');
+            const data = await res.json();
+            if (!data.success) return;
+
+            // Si detectó una matrícula
+            if (data.qr) {
+                const matricula = data.qr;
+
+                // Cierra QR modal y ejecuta acción
+                closeModal('qr-modal');
+
+                if (currentAction === 'ocupar') {
+                    await ocuparMesa(currentMesa, matricula);
+                } else if (currentAction === 'liberar') {
+                    await liberarMesa(currentMesa, matricula);
+                }
+            }
+        } catch (e) {
+            // silencioso para no spamear
+        }
+    }, 250);
+}
+
+function stopQrPolling() {
+    if (qrPollInterval) {
+        clearInterval(qrPollInterval);
+        qrPollInterval = null;
     }
 }
 
@@ -116,14 +140,9 @@ function confirmAction() {
             ? `Acerca tu credencial - Mesa ${currentMesa}`
             : `Confirma tu identidad - Mesa ${currentMesa}`;
 
-    // ✅ Prender preview al abrir modal
+    // Preview + escucha QR en vivo
     startCameraPreview();
-
-    // ✅ Auto-escanear (si NO lo quieres, comenta estas 3 líneas)
-    clearQrAutoScanTimer();
-    qrAutoScanTimer = setTimeout(() => {
-        escanearQR();
-    }, 600);
+    startQrPolling();
 }
 
 // ==================== TECLADO MANUAL ====================
@@ -159,50 +178,30 @@ async function submitMatricula() {
     }
 }
 
-// ==================== ESCANEO QR ====================
-
+// ==================== ESCANEO QR (compat) ====================
+// Ya no es necesario para el modo "BIEN", pero lo dejo por si quieres botón manual.
 async function escanearQR() {
     showToast('Escaneando código QR...', 'info');
 
-    // ⚠️ Importante: detener preview antes de escanear
-    // porque el stream y el escaneo pueden pelearse la cámara
-    stopCameraPreview();
-
     try {
-        const response = await fetch('/api/escanear_qr', {
-            method: 'POST'
-        });
-
+        const response = await fetch('/api/escanear_qr', { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
             closeModal('qr-modal');
             const matricula = data.matricula;
 
-            // Ejecutar acción
             if (currentAction === 'ocupar') {
                 await ocuparMesa(currentMesa, matricula);
             } else if (currentAction === 'liberar') {
                 await liberarMesa(currentMesa, matricula);
             }
         } else {
-            showToast(data.error || 'Error escaneando QR', 'error');
-
-            // Si falló, vuelve a prender preview para que el usuario se acomode
-            startCameraPreview();
-
-            // (Opcional) reintentar auto-scan después de un ratito
-            clearQrAutoScanTimer();
-            qrAutoScanTimer = setTimeout(() => {
-                escanearQR();
-            }, 1500);
+            showToast(data.error || 'Aún no se detecta QR', 'info');
         }
     } catch (error) {
         console.error('Error QR:', error);
         showToast('Error conectando con escáner', 'error');
-
-        // Vuelve a prender preview si hay error de red
-        startCameraPreview();
     }
 }
 
@@ -212,20 +211,15 @@ async function ocuparMesa(mesaId, matricula) {
     try {
         const response = await fetch('/api/ocupar', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                mesa_id: parseInt(mesaId),
-                matricula: matricula
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mesa_id: parseInt(mesaId), matricula: matricula })
         });
 
         const data = await response.json();
 
         if (data.success) {
             showToast(data.mensaje, 'success');
-            cargarEstados(); // Recargar estados
+            cargarEstados();
         } else {
             showToast(data.error, 'error');
         }
@@ -241,20 +235,15 @@ async function liberarMesa(mesaId, matricula) {
     try {
         const response = await fetch('/api/liberar', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                mesa_id: parseInt(mesaId),
-                matricula: matricula
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mesa_id: parseInt(mesaId), matricula: matricula })
         });
 
         const data = await response.json();
 
         if (data.success) {
             showToast(data.mensaje, 'success');
-            cargarEstados(); // Recargar estados
+            cargarEstados();
         } else {
             showToast(data.error, 'error');
         }
@@ -273,10 +262,9 @@ function openModal(modalId) {
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
 
-    // ✅ Si se cierra el modal del QR, apagar preview y cancelar reintentos
     if (modalId === 'qr-modal') {
+        stopQrPolling();
         stopCameraPreview();
-        clearQrAutoScanTimer();
     }
 }
 
