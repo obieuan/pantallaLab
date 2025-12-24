@@ -299,13 +299,20 @@ def sincronizar_inicial():
         logger.error(f"Error en sincronización inicial: {e}")
 
 def gen_frames_from_service():
+    # 10–15 fps es suficiente para “preview” y no mata el server
+    FRAME_SLEEP = 0.07  # ~14 fps
+
     while True:
         jpg = camera_service.get_jpeg()
         if jpg:
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + jpg + b'\r\n')
+                   b'Content-Type: image/jpeg\r\n'
+                   b'Cache-Control: no-cache\r\n'
+                   b'Pragma: no-cache\r\n\r\n' + jpg + b'\r\n')
+            time.sleep(FRAME_SLEEP)  # <<< CLAVE: duerme también cuando hay frame
         else:
             time.sleep(0.05)
+
 
 @app.route('/api/camera_feed')
 def camera_feed():
